@@ -1,5 +1,10 @@
 # PhotoVault - Personal Photo Storage App
 
+[![MIT License](https://img.shields.io/badge/License-MIT-green.svg)](https://choosealicense.com/licenses/mit/)
+[![Contributions Welcome](https://img.shields.io/badge/contributions-welcome-brightgreen.svg?style=flat)](CONTRIBUTING.md)
+[![Code of Conduct](https://img.shields.io/badge/code%20of-conduct-ff69b4.svg?style=flat)](CODE_OF_CONDUCT.md)
+[![Security Policy](https://img.shields.io/badge/security-policy-red.svg?style=flat)](SECURITY.md)
+
 A modern, self-hosted photo storage application similar to Google Photos, built with AWS infrastructure and designed for personal use.
 
 ## 🎯 Project Overview
