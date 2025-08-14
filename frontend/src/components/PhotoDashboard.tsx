@@ -25,6 +25,8 @@ interface PhotoStats {
   user: string;
 }
 
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
+
 export default function PhotoDashboard() {
   const { user, logout, token } = useAuth();
   const [photos, setPhotos] = useState<Photo[]>([]);
@@ -40,7 +42,7 @@ export default function PhotoDashboard() {
     setError(null);
     try {
       console.log('Fetching photos with token:', token ? 'Present' : 'Missing');
-      const response = await fetch('/api/files', {
+      const response = await fetch(`${API_BASE_URL}/files`, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
@@ -69,7 +71,7 @@ export default function PhotoDashboard() {
   // Fetch user statistics
   const fetchStats = async () => {
     try {
-      const response = await fetch('/api/files/stats', {
+      const response = await fetch(`${API_BASE_URL}/files/stats`, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
@@ -96,7 +98,7 @@ export default function PhotoDashboard() {
 
     try {
       // Get upload URL from backend
-      const uploadResponse = await fetch('/api/files/upload-url', {
+      const uploadResponse = await fetch(`${API_BASE_URL}/files/upload-url`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -151,7 +153,7 @@ export default function PhotoDashboard() {
   // Download photo
   const downloadPhoto = async (photoId: number, filename: string) => {
     try {
-      const response = await fetch(`/api/files/${photoId}/download`, {
+      const response = await fetch(`${API_BASE_URL}/files/${photoId}/download`, {
         headers: {
           'Authorization': `Bearer ${token}`,
         },
@@ -181,7 +183,7 @@ export default function PhotoDashboard() {
     if (!confirm(`Are you sure you want to delete "${filename}"?`)) return;
 
     try {
-      const response = await fetch(`/api/files/${photoId}`, {
+      const response = await fetch(`${API_BASE_URL}/files/${photoId}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -352,10 +354,10 @@ export default function PhotoDashboard() {
         <div className="bg-white rounded-xl shadow-sm border border-gray-100">
           <div className="p-6 border-b border-gray-100">
             <h2 className="text-lg font-semibold text-gray-900">
-              Photo Grid (9 Boxes) - {photos.length} photos loaded
+              Your Photos
             </h2>
-            {/* Debug info */}
             <div className="text-xs text-gray-500 mt-2">
+              {photos.length} photos loaded |
               Token: {token ? '✓ Present' : '✗ Missing'} | 
               Loading: {loading ? 'Yes' : 'No'} | 
               Error: {error || 'None'}
@@ -363,59 +365,64 @@ export default function PhotoDashboard() {
           </div>
           
           <div className="p-6">
-            <div className="grid grid-cols-3 gap-4 max-w-lg mx-auto">
-              {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((boxNumber) => {
-                const photo = photos[boxNumber - 1]; // Get photo if it exists
-                return (
-                  <div key={boxNumber} className="group relative">
-                    {/* Photo Box */}
-                    <div 
-                      className="aspect-square bg-gray-100 hover:bg-gray-200 cursor-pointer transition-colors duration-200 border border-gray-300 hover:border-gray-400 rounded-lg flex items-center justify-center" 
-                      onClick={() => photo && setSelectedPhoto(photo)}
-                      title={photo ? photo.original_name : `Empty slot ${boxNumber}`}
+            {photos.length > 0 ? (
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+                {photos.map((photo) => (
+                  <div key={photo.id} className="group relative">
+                    <div
+                      className="aspect-square bg-gray-100 rounded-lg overflow-hidden cursor-pointer"
+                      onClick={() => setSelectedPhoto(photo)}
                     >
-                      {photo ? (
-                        <div className="w-full h-full bg-blue-100 rounded-lg flex items-center justify-center">
-                          <Image className="h-8 w-8 text-blue-600" />
-                        </div>
+                      {photo.downloadUrl && photo.mime_type.startsWith('image/') ? (
+                        <img
+                          src={photo.downloadUrl}
+                          alt={photo.original_name}
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                        />
                       ) : (
-                        <div className="w-full h-full bg-gray-100 rounded-lg flex items-center justify-center">
-                          <div className="w-6 h-6 border-2 border-dashed border-gray-400 rounded"></div>
+                        <div className="w-full h-full bg-gray-200 flex items-center justify-center">
+                          <Image className="h-8 w-8 text-gray-400" />
                         </div>
                       )}
                     </div>
 
-                    {/* Action buttons - only show if photo exists */}
-                    {photo && (
-                      <div className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-                        <div className="flex gap-1">
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              downloadPhoto(photo.id, photo.original_name);
-                            }}
-                            className="bg-blue-500 text-white p-1 rounded text-xs hover:bg-blue-600 transition-colors"
-                            title="Download"
-                          >
-                            <Download className="h-3 w-3" />
-                          </button>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              deletePhoto(photo.id, photo.original_name);
-                            }}
-                            className="bg-red-500 text-white p-1 rounded text-xs hover:bg-red-600 transition-colors"
-                            title="Delete"
-                          >
-                            <Trash2 className="h-3 w-3" />
-                          </button>
-                        </div>
-                      </div>
-                    )}
+                    <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex gap-2">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          downloadPhoto(photo.id, photo.original_name);
+                        }}
+                        className="bg-white/80 backdrop-blur-sm text-gray-800 p-2 rounded-full hover:bg-white transition-colors shadow-md"
+                        title="Download"
+                      >
+                        <Download className="h-4 w-4" />
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          deletePhoto(photo.id, photo.original_name);
+                        }}
+                        className="bg-red-500/80 backdrop-blur-sm text-white p-2 rounded-full hover:bg-red-600 transition-colors shadow-md"
+                        title="Delete"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                    <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 to-transparent p-3 text-white">
+                      <p className="text-xs font-semibold truncate">{photo.original_name}</p>
+                    </div>
                   </div>
-                );
-              })}
-            </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-16">
+                <div className="bg-gray-100 p-8 rounded-full w-24 h-24 mx-auto mb-4 flex items-center justify-center">
+                  <Camera className="h-12 w-12 text-gray-400" />
+                </div>
+                <h3 className="text-xl font-semibold text-gray-800">No photos found</h3>
+                <p className="text-gray-500 mt-2">Upload your first photo to see it here.</p>
+              </div>
+            )}
           </div>
         </div>
       </div>
