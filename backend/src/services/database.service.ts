@@ -1,47 +1,51 @@
-<<<<<<< Updated upstream
-import sqlite3 from 'sqlite3';
-import { Database, open } from 'sqlite';
-import path from 'path';
-=======
-<<<<<<< HEAD
 import { MongoClient, ServerApiVersion, Db, Collection, ObjectId } from 'mongodb';
->>>>>>> Stashed changes
 
 export interface User {
-  id: number;
+  _id?: ObjectId;
   username: string;
   email: string;
-  password: string;
-  created_at: string;
-  updated_at: string;
+  password?: string; // Optional for Auth0 users
+  auth0Id?: string; // Auth0 user ID
+  name?: string; // Full name from Auth0
+  picture?: string; // Profile picture from Auth0
+  emailVerified?: boolean; // Email verification status from Auth0
+  
+  // Extended Profile Information
+  profile?: {
+    firstName?: string;
+    lastName?: string;
+    displayName?: string;
+    bio?: string;
+    location?: string;
+    website?: string;
+    phone?: string;
+    birthDate?: Date;
+    occupation?: string;
+    interests?: string[];
+    socialLinks?: {
+      twitter?: string;
+      instagram?: string;
+      linkedin?: string;
+      github?: string;
+    };
+    preferences?: {
+      theme?: 'light' | 'dark' | 'auto';
+      privacy?: 'public' | 'private' | 'friends';
+      notifications?: {
+        email?: boolean;
+        uploads?: boolean;
+        sharing?: boolean;
+      };
+    };
+  };
+  
+  created_at: Date;
+  updated_at: Date;
 }
 
 export interface Photo {
-<<<<<<< Updated upstream
-  id: number;
-  user_id: number;
-=======
   _id?: ObjectId;
   user_id: ObjectId;
-=======
-import sqlite3 from 'sqlite3';
-import { Database, open } from 'sqlite';
-import path from 'path';
-
-export interface User {
-  id: number;
-  username: string;
-  email: string;
-  password: string;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface Photo {
-  id: number;
-  user_id: number;
->>>>>>> c29745ad016536b3fcc94cb0b4d91795b91dcfdc
->>>>>>> Stashed changes
   filename: string;
   s3_key: string;
   original_name: string;
@@ -49,16 +53,6 @@ export interface Photo {
   file_size: number;
   width?: number;
   height?: number;
-<<<<<<< Updated upstream
-  taken_at?: string;
-  uploaded_at: string;
-  metadata?: string; // JSON string for EXIF data
-}
-
-class DatabaseService {
-  private db: Database | null = null;
-=======
-<<<<<<< HEAD
   taken_at?: Date;
   uploaded_at: Date;
   metadata?: object; // EXIF data as object instead of JSON string
@@ -84,32 +78,10 @@ class DatabaseService {
     
     console.log('🔗 MongoDB URI configured:', this.uri.replace(/\/\/.*@/, '//***@')); // Hide credentials in logs
   }
-=======
-  taken_at?: string;
-  uploaded_at: string;
-  metadata?: string; // JSON string for EXIF data
-}
-
-class DatabaseService {
-  private db: Database | null = null;
->>>>>>> c29745ad016536b3fcc94cb0b4d91795b91dcfdc
->>>>>>> Stashed changes
 
   async initialize() {
     if (this.db) return this.db;
 
-<<<<<<< Updated upstream
-    const dbPath = path.join(__dirname, '../../data/photovault.db');
-    
-    this.db = await open({
-      filename: dbPath,
-      driver: sqlite3.Database
-    });
-
-    await this.createTables();
-    return this.db;
-=======
-<<<<<<< HEAD
     try {
       this.client = new MongoClient(this.uri, {
         serverApi: {
@@ -134,14 +106,11 @@ class DatabaseService {
       // Return a mock database object to prevent crashes
       return null;
     }
->>>>>>> Stashed changes
   }
 
-  private async createTables() {
+  private async createIndexes() {
     if (!this.db) throw new Error('Database not initialized');
 
-<<<<<<< Updated upstream
-=======
     const usersCollection = this.db.collection('users');
     const photosCollection = this.db.collection('photos');
 
@@ -155,67 +124,6 @@ class DatabaseService {
     await photosCollection.createIndex({ uploaded_at: -1 });
     await photosCollection.createIndex({ taken_at: -1 });
     await photosCollection.createIndex({ s3_key: 1 }, { unique: true });
-=======
-    const dbPath = path.join(__dirname, '../../data/photovault.db');
-    
-    this.db = await open({
-      filename: dbPath,
-      driver: sqlite3.Database
-    });
-
-    await this.createTables();
-    return this.db;
-  }
-
-  private async createTables() {
-    if (!this.db) throw new Error('Database not initialized');
-
->>>>>>> Stashed changes
-    // Users table
-    await this.db.exec(`
-      CREATE TABLE IF NOT EXISTS users (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        username TEXT UNIQUE NOT NULL,
-        email TEXT UNIQUE NOT NULL,
-        password TEXT NOT NULL,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-      )
-    `);
-
-    // Photos table
-    await this.db.exec(`
-      CREATE TABLE IF NOT EXISTS photos (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER NOT NULL,
-        filename TEXT NOT NULL,
-        s3_key TEXT UNIQUE NOT NULL,
-        original_name TEXT NOT NULL,
-        mime_type TEXT NOT NULL,
-        file_size INTEGER NOT NULL,
-        width INTEGER,
-        height INTEGER,
-        taken_at DATETIME,
-        uploaded_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        metadata TEXT,
-        FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
-      )
-    `);
-
-    // Create indexes for better performance
-    await this.db.exec(`
-      CREATE INDEX IF NOT EXISTS idx_photos_user_id ON photos(user_id);
-      CREATE INDEX IF NOT EXISTS idx_photos_uploaded_at ON photos(uploaded_at);
-      CREATE INDEX IF NOT EXISTS idx_photos_taken_at ON photos(taken_at);
-      CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
-      CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
-    `);
-
-    console.log('✅ Database tables created successfully');
-<<<<<<< Updated upstream
-=======
->>>>>>> c29745ad016536b3fcc94cb0b4d91795b91dcfdc
->>>>>>> Stashed changes
   }
 
   async getDatabase() {
@@ -225,9 +133,6 @@ class DatabaseService {
     return this.db!;
   }
 
-<<<<<<< Updated upstream
-=======
-<<<<<<< HEAD
   private getUsersCollection(): Collection<User> {
     if (!this.db) throw new Error('Database not initialized');
     return this.db.collection<User>('users');
@@ -238,289 +143,306 @@ class DatabaseService {
     return this.db.collection<Photo>('photos');
   }
 
->>>>>>> Stashed changes
   // User methods
   async createUser(username: string, email: string, hashedPassword: string): Promise<User> {
-    const db = await this.getDatabase();
+    await this.getDatabase();
+    const usersCollection = this.getUsersCollection();
     
-    const result = await db.run(
-      'INSERT INTO users (username, email, password) VALUES (?, ?, ?)',
-      [username, email, hashedPassword]
-    );
+    const now = new Date();
+    const userData: Omit<User, '_id'> = {
+      username,
+      email,
+      password: hashedPassword,
+      created_at: now,
+      updated_at: now
+    };
 
-    const user = await db.get(
-      'SELECT * FROM users WHERE id = ?',
-      [result.lastID]
-    );
-
-    return user as User;
+    const result = await usersCollection.insertOne(userData);
+    const user = await usersCollection.findOne({ _id: result.insertedId });
+    
+    if (!user) throw new Error('Failed to create user');
+    return user;
   }
 
   async getUserByEmail(email: string): Promise<User | null> {
-    const db = await this.getDatabase();
-    const user = await db.get('SELECT * FROM users WHERE email = ?', [email]);
-    return user as User | null;
+    await this.getDatabase();
+    const usersCollection = this.getUsersCollection();
+    return await usersCollection.findOne({ email });
   }
 
   async getUserByUsername(username: string): Promise<User | null> {
-    const db = await this.getDatabase();
-    const user = await db.get('SELECT * FROM users WHERE username = ?', [username]);
-    return user as User | null;
+    await this.getDatabase();
+    const usersCollection = this.getUsersCollection();
+    return await usersCollection.findOne({ username });
   }
 
-  async getUserById(id: number): Promise<User | null> {
-    const db = await this.getDatabase();
-    const user = await db.get('SELECT * FROM users WHERE id = ?', [id]);
-    return user as User | null;
+  async getUserById(id: string | ObjectId): Promise<User | null> {
+    await this.getDatabase();
+    const usersCollection = this.getUsersCollection();
+    const objectId = typeof id === 'string' ? new ObjectId(id) : id;
+    return await usersCollection.findOne({ _id: objectId });
+  }
+
+  async getUserByAuth0Id(auth0Id: string): Promise<User | null> {
+    await this.getDatabase();
+    const usersCollection = this.getUsersCollection();
+    return await usersCollection.findOne({ auth0Id });
+  }
+
+  async createAuth0User(userData: {
+    auth0Id: string;
+    username: string;
+    email: string;
+    name?: string;
+    picture?: string;
+    emailVerified?: boolean;
+  }): Promise<User> {
+    await this.getDatabase();
+    const usersCollection = this.getUsersCollection();
+    
+    // Check if username already exists and make it unique if needed
+    let uniqueUsername = userData.username;
+    let counter = 1;
+    
+    while (await usersCollection.findOne({ username: uniqueUsername })) {
+      uniqueUsername = `${userData.username}_${counter}`;
+      counter++;
+    }
+    
+    const now = new Date();
+    const user: Omit<User, '_id'> = {
+      ...userData,
+      username: uniqueUsername,
+      created_at: now,
+      updated_at: now
+    };
+
+    try {
+      const result = await usersCollection.insertOne(user);
+      const createdUser = await usersCollection.findOne({ _id: result.insertedId });
+      
+      if (!createdUser) throw new Error('Failed to create Auth0 user');
+      return createdUser;
+    } catch (error: any) {
+      // Handle duplicate auth0Id error specifically
+      if (error.code === 11000 && error.keyPattern?.auth0Id) {
+        // User already exists, try to find and return them
+        const existingUser = await usersCollection.findOne({ auth0Id: userData.auth0Id });
+        if (existingUser) {
+          return existingUser;
+        }
+      }
+      throw error;
+    }
+  }
+
+  async updateAuth0User(userId: string, updateData: {
+    email?: string;
+    name?: string;
+    picture?: string;
+    emailVerified?: boolean;
+  }): Promise<User> {
+    await this.getDatabase();
+    const usersCollection = this.getUsersCollection();
+    const objectId = new ObjectId(userId);
+    
+    const result = await usersCollection.findOneAndUpdate(
+      { _id: objectId },
+      { 
+        $set: { 
+          ...updateData,
+          updated_at: new Date() 
+        } 
+      },
+      { returnDocument: 'after' }
+    );
+    
+    if (!result) throw new Error('Failed to update Auth0 user');
+    return result;
+  }
+
+  async updateUserProfile(userId: string, profileData: Partial<User['profile']>): Promise<User> {
+    await this.getDatabase();
+    const usersCollection = this.getUsersCollection();
+    const objectId = new ObjectId(userId);
+    
+    const result = await usersCollection.findOneAndUpdate(
+      { _id: objectId },
+      { 
+        $set: { 
+          profile: profileData,
+          updated_at: new Date() 
+        } 
+      },
+      { returnDocument: 'after' }
+    );
+    
+    if (!result) throw new Error('Failed to update user profile');
+    return result;
+  }
+
+  async updateUserProfileField(userId: string, fieldPath: string, value: any): Promise<User> {
+    await this.getDatabase();
+    const usersCollection = this.getUsersCollection();
+    const objectId = new ObjectId(userId);
+    
+    const updateQuery: any = {
+      updated_at: new Date()
+    };
+    updateQuery[`profile.${fieldPath}`] = value;
+    
+    const result = await usersCollection.findOneAndUpdate(
+      { _id: objectId },
+      { $set: updateQuery },
+      { returnDocument: 'after' }
+    );
+    
+    if (!result) throw new Error('Failed to update user profile field');
+    return result;
+  }
+
+  async getUserProfile(userId: string): Promise<User | null> {
+    await this.getDatabase();
+    const usersCollection = this.getUsersCollection();
+    const objectId = new ObjectId(userId);
+    
+    return await usersCollection.findOne(
+      { _id: objectId },
+      { projection: { password: 0 } } // Exclude password from response
+    );
   }
 
   // Photo methods
-  async createPhoto(photoData: Omit<Photo, 'id' | 'uploaded_at'>): Promise<Photo> {
-    const db = await this.getDatabase();
+  async createPhoto(photoData: Omit<Photo, '_id' | 'uploaded_at'>): Promise<Photo> {
+    await this.getDatabase();
+    const photosCollection = this.getPhotosCollection();
     
-    const result = await db.run(`
-      INSERT INTO photos (
-        user_id, filename, s3_key, original_name, mime_type, 
-        file_size, width, height, taken_at, metadata
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `, [
-      photoData.user_id,
-      photoData.filename,
-      photoData.s3_key,
-      photoData.original_name,
-      photoData.mime_type,
-      photoData.file_size,
-      photoData.width,
-      photoData.height,
-      photoData.taken_at,
-      photoData.metadata
-    ]);
+    const photoDocument: Omit<Photo, '_id'> = {
+      ...photoData,
+      uploaded_at: new Date()
+    };
 
-    const photo = await db.get('SELECT * FROM photos WHERE id = ?', [result.lastID]);
-    return photo as Photo;
-  }
-
-  async getUserPhotos(userId: number, limit: number = 50, offset: number = 0): Promise<Photo[]> {
-    const db = await this.getDatabase();
-    const photos = await db.all(
-      'SELECT * FROM photos WHERE user_id = ? ORDER BY uploaded_at DESC LIMIT ? OFFSET ?',
-      [userId, limit, offset]
-    );
-    return photos as Photo[];
-  }
-
-  async getPhotosByDateRange(userId: number, startDate: string, endDate: string): Promise<Photo[]> {
-    const db = await this.getDatabase();
-    const photos = await db.all(`
-      SELECT * FROM photos 
-      WHERE user_id = ? AND date(uploaded_at) BETWEEN ? AND ?
-      ORDER BY uploaded_at DESC
-    `, [userId, startDate, endDate]);
-    return photos as Photo[];
-  }
-
-  async getPhotosByYearMonth(userId: number, year: number, month?: number): Promise<Photo[]> {
-    const db = await this.getDatabase();
+    const result = await photosCollection.insertOne(photoDocument);
+    const photo = await photosCollection.findOne({ _id: result.insertedId });
     
-    let query = `
-      SELECT * FROM photos 
-      WHERE user_id = ? AND strftime('%Y', uploaded_at) = ?
-    `;
-    const params: any[] = [userId, year.toString()];
+    if (!photo) throw new Error('Failed to create photo');
+    return photo;
+  }
+
+  async getUserPhotos(userId: string | ObjectId, limit: number = 50, offset: number = 0): Promise<Photo[]> {
+    await this.getDatabase();
+    const photosCollection = this.getPhotosCollection();
+    const objectId = typeof userId === 'string' ? new ObjectId(userId) : userId;
+    
+    return await photosCollection
+      .find({ user_id: objectId })
+      .sort({ uploaded_at: -1 })
+      .skip(offset)
+      .limit(limit)
+      .toArray();
+  }
+
+  async getPhotosByDateRange(userId: string | ObjectId, startDate: Date, endDate: Date): Promise<Photo[]> {
+    await this.getDatabase();
+    const photosCollection = this.getPhotosCollection();
+    const objectId = typeof userId === 'string' ? new ObjectId(userId) : userId;
+    
+    return await photosCollection
+      .find({
+        user_id: objectId,
+        uploaded_at: {
+          $gte: startDate,
+          $lte: endDate
+        }
+      })
+      .sort({ uploaded_at: -1 })
+      .toArray();
+  }
+
+  async getPhotosByYearMonth(userId: string | ObjectId, year: number, month?: number): Promise<Photo[]> {
+    await this.getDatabase();
+    const photosCollection = this.getPhotosCollection();
+    const objectId = typeof userId === 'string' ? new ObjectId(userId) : userId;
+    
+    let startDate: Date;
+    let endDate: Date;
 
     if (month !== undefined) {
-      query += ` AND strftime('%m', uploaded_at) = ?`;
-      params.push(month.toString().padStart(2, '0'));
+      startDate = new Date(year, month - 1, 1);
+      endDate = new Date(year, month, 0, 23, 59, 59, 999);
+    } else {
+      startDate = new Date(year, 0, 1);
+      endDate = new Date(year, 11, 31, 23, 59, 59, 999);
     }
 
-    query += ` ORDER BY uploaded_at DESC`;
-
-    const photos = await db.all(query, params);
-    return photos as Photo[];
+    return await photosCollection
+      .find({
+        user_id: objectId,
+        uploaded_at: {
+          $gte: startDate,
+          $lte: endDate
+        }
+      })
+      .sort({ uploaded_at: -1 })
+      .toArray();
   }
 
-  async getPhotoById(id: number, userId: number): Promise<Photo | null> {
-    const db = await this.getDatabase();
-    const photo = await db.get(
-      'SELECT * FROM photos WHERE id = ? AND user_id = ?',
-      [id, userId]
-    );
-    return photo as Photo | null;
-  }
-
-  async deletePhoto(id: number, userId: number): Promise<boolean> {
-    const db = await this.getDatabase();
-    const result = await db.run(
-      'DELETE FROM photos WHERE id = ? AND user_id = ?',
-      [id, userId]
-    );
-    return (result.changes || 0) > 0;
-  }
-
-  async getPhotoStats(userId: number) {
-    const db = await this.getDatabase();
+  async getPhotoById(id: string | ObjectId, userId: string | ObjectId): Promise<Photo | null> {
+    await this.getDatabase();
+    const photosCollection = this.getPhotosCollection();
+    const photoObjectId = typeof id === 'string' ? new ObjectId(id) : id;
+    const userObjectId = typeof userId === 'string' ? new ObjectId(userId) : userId;
     
-    const stats = await db.get(`
-      SELECT 
-        COUNT(*) as total_photos,
-        SUM(file_size) as total_size,
-        MIN(uploaded_at) as first_upload,
-        MAX(uploaded_at) as last_upload
-      FROM photos 
-      WHERE user_id = ?
-    `, [userId]);
+    return await photosCollection.findOne({
+      _id: photoObjectId,
+      user_id: userObjectId
+    });
+  }
 
-    return stats;
+  async deletePhoto(id: string | ObjectId, userId: string | ObjectId): Promise<boolean> {
+    await this.getDatabase();
+    const photosCollection = this.getPhotosCollection();
+    const photoObjectId = typeof id === 'string' ? new ObjectId(id) : id;
+    const userObjectId = typeof userId === 'string' ? new ObjectId(userId) : userId;
+    
+    const result = await photosCollection.deleteOne({
+      _id: photoObjectId,
+      user_id: userObjectId
+    });
+    
+    return result.deletedCount > 0;
+  }
+
+  async getPhotoStats(userId: string | ObjectId) {
+    await this.getDatabase();
+    const photosCollection = this.getPhotosCollection();
+    const objectId = typeof userId === 'string' ? new ObjectId(userId) : userId;
+    
+    const stats = await photosCollection.aggregate([
+      { $match: { user_id: objectId } },
+      {
+        $group: {
+          _id: null,
+          total_photos: { $sum: 1 },
+          total_size: { $sum: '$file_size' },
+          first_upload: { $min: '$uploaded_at' },
+          last_upload: { $max: '$uploaded_at' }
+        }
+      }
+    ]).toArray();
+
+    return stats.length > 0 ? stats[0] : {
+      total_photos: 0,
+      total_size: 0,
+      first_upload: null,
+      last_upload: null
+    };
   }
 
   async close() {
-<<<<<<< Updated upstream
-    if (this.db) {
-      await this.db.close();
-=======
     if (this.client) {
       await this.client.close();
       this.client = null;
-=======
-  // User methods
-  async createUser(username: string, email: string, hashedPassword: string): Promise<User> {
-    const db = await this.getDatabase();
-    
-    const result = await db.run(
-      'INSERT INTO users (username, email, password) VALUES (?, ?, ?)',
-      [username, email, hashedPassword]
-    );
-
-    const user = await db.get(
-      'SELECT * FROM users WHERE id = ?',
-      [result.lastID]
-    );
-
-    return user as User;
-  }
-
-  async getUserByEmail(email: string): Promise<User | null> {
-    const db = await this.getDatabase();
-    const user = await db.get('SELECT * FROM users WHERE email = ?', [email]);
-    return user as User | null;
-  }
-
-  async getUserByUsername(username: string): Promise<User | null> {
-    const db = await this.getDatabase();
-    const user = await db.get('SELECT * FROM users WHERE username = ?', [username]);
-    return user as User | null;
-  }
-
-  async getUserById(id: number): Promise<User | null> {
-    const db = await this.getDatabase();
-    const user = await db.get('SELECT * FROM users WHERE id = ?', [id]);
-    return user as User | null;
-  }
-
-  // Photo methods
-  async createPhoto(photoData: Omit<Photo, 'id' | 'uploaded_at'>): Promise<Photo> {
-    const db = await this.getDatabase();
-    
-    const result = await db.run(`
-      INSERT INTO photos (
-        user_id, filename, s3_key, original_name, mime_type, 
-        file_size, width, height, taken_at, metadata
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `, [
-      photoData.user_id,
-      photoData.filename,
-      photoData.s3_key,
-      photoData.original_name,
-      photoData.mime_type,
-      photoData.file_size,
-      photoData.width,
-      photoData.height,
-      photoData.taken_at,
-      photoData.metadata
-    ]);
-
-    const photo = await db.get('SELECT * FROM photos WHERE id = ?', [result.lastID]);
-    return photo as Photo;
-  }
-
-  async getUserPhotos(userId: number, limit: number = 50, offset: number = 0): Promise<Photo[]> {
-    const db = await this.getDatabase();
-    const photos = await db.all(
-      'SELECT * FROM photos WHERE user_id = ? ORDER BY uploaded_at DESC LIMIT ? OFFSET ?',
-      [userId, limit, offset]
-    );
-    return photos as Photo[];
-  }
-
-  async getPhotosByDateRange(userId: number, startDate: string, endDate: string): Promise<Photo[]> {
-    const db = await this.getDatabase();
-    const photos = await db.all(`
-      SELECT * FROM photos 
-      WHERE user_id = ? AND date(uploaded_at) BETWEEN ? AND ?
-      ORDER BY uploaded_at DESC
-    `, [userId, startDate, endDate]);
-    return photos as Photo[];
-  }
-
-  async getPhotosByYearMonth(userId: number, year: number, month?: number): Promise<Photo[]> {
-    const db = await this.getDatabase();
-    
-    let query = `
-      SELECT * FROM photos 
-      WHERE user_id = ? AND strftime('%Y', uploaded_at) = ?
-    `;
-    const params: any[] = [userId, year.toString()];
-
-    if (month !== undefined) {
-      query += ` AND strftime('%m', uploaded_at) = ?`;
-      params.push(month.toString().padStart(2, '0'));
-    }
-
-    query += ` ORDER BY uploaded_at DESC`;
-
-    const photos = await db.all(query, params);
-    return photos as Photo[];
-  }
-
-  async getPhotoById(id: number, userId: number): Promise<Photo | null> {
-    const db = await this.getDatabase();
-    const photo = await db.get(
-      'SELECT * FROM photos WHERE id = ? AND user_id = ?',
-      [id, userId]
-    );
-    return photo as Photo | null;
-  }
-
-  async deletePhoto(id: number, userId: number): Promise<boolean> {
-    const db = await this.getDatabase();
-    const result = await db.run(
-      'DELETE FROM photos WHERE id = ? AND user_id = ?',
-      [id, userId]
-    );
-    return (result.changes || 0) > 0;
-  }
-
-  async getPhotoStats(userId: number) {
-    const db = await this.getDatabase();
-    
-    const stats = await db.get(`
-      SELECT 
-        COUNT(*) as total_photos,
-        SUM(file_size) as total_size,
-        MIN(uploaded_at) as first_upload,
-        MAX(uploaded_at) as last_upload
-      FROM photos 
-      WHERE user_id = ?
-    `, [userId]);
-
-    return stats;
-  }
-
-  async close() {
-    if (this.db) {
-      await this.db.close();
->>>>>>> c29745ad016536b3fcc94cb0b4d91795b91dcfdc
->>>>>>> Stashed changes
       this.db = null;
     }
   }

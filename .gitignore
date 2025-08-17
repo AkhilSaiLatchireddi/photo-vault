@@ -68,29 +68,13 @@ Thumbs.db
 *.db
 *.sqlite
 
-<<<<<<< Updated upstream
-# Prisma
-/prisma/migrations/
-=======
-<<<<<<< HEAD
 # MongoDB
 /backend/data/
 *.db
 *.db-journal
-=======
-# Prisma
-/prisma/migrations/
->>>>>>> c29745ad016536b3fcc94cb0b4d91795b91dcfdc
->>>>>>> Stashed changes
 
 # S3 Local
 /uploads/
 /temp/
-<<<<<<< Updated upstream
-=======
-<<<<<<< HEAD
 
 dist/
-=======
->>>>>>> c29745ad016536b3fcc94cb0b4d91795b91dcfdc
->>>>>>> Stashed changes

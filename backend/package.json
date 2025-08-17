@@ -4,24 +4,12 @@
   "description": "Backend API for PhotoVault",
   "main": "dist/index.js",
   "scripts": {
-<<<<<<< Updated upstream
-    "dev": "nodemon src/index.ts",
-    "build": "tsc",
-    "start": "node dist/index.js",
-=======
-<<<<<<< HEAD
     "dev": "node -r dotenv/config dist/index.js",
     "dev:serverless": "serverless offline",
     "build": "tsc",
     "start": "node -r dotenv/config dist/index.js",
     "deploy": "serverless deploy",
     "deploy:prod": "serverless deploy --stage prod",
-=======
-    "dev": "nodemon src/index.ts",
-    "build": "tsc",
-    "start": "node dist/index.js",
->>>>>>> c29745ad016536b3fcc94cb0b4d91795b91dcfdc
->>>>>>> Stashed changes
     "test": "jest",
     "test:watch": "jest --watch",
     "lint": "eslint src/**/*.ts",
@@ -29,104 +17,36 @@
     "generate": "npx prisma generate"
   },
   "dependencies": {
-<<<<<<< Updated upstream
-    "@aws-sdk/client-cognito-identity-provider": "^3.496.0",
-=======
-<<<<<<< HEAD
->>>>>>> Stashed changes
     "@aws-sdk/client-s3": "^3.496.0",
     "@aws-sdk/s3-request-presigner": "^3.496.0",
-    "@prisma/client": "^5.8.0",
-    "@types/sqlite3": "^3.1.11",
-    "aws-sdk": "^2.1565.0",
-    "bcrypt": "^5.1.0",
     "cors": "^2.8.0",
     "dotenv": "^16.4.0",
-    "exifr": "^7.1.0",
     "express": "^4.18.0",
+    "express-oauth2-jwt-bearer": "^1.6.1",
     "express-rate-limit": "^7.1.0",
     "express-validator": "^7.2.1",
     "helmet": "^7.1.0",
-    "joi": "^17.12.0",
     "jsonwebtoken": "^9.0.0",
-    "multer": "^2.0.2",
-    "multer-s3": "^3.0.0",
-    "node-cron": "^3.0.0",
-    "pg": "^8.11.0",
-    "prisma": "^5.8.0",
-    "sharp": "^0.33.0",
-    "sqlite": "^5.1.1",
-    "sqlite3": "^5.1.7",
+    "jwks-rsa": "^3.2.0",
+    "mongodb": "^6.18.0",
+    "serverless-http": "^3.2.0",
     "uuid": "^9.0.0"
   },
   "devDependencies": {
-<<<<<<< Updated upstream
-    "@types/bcrypt": "^5.0.0",
-=======
-=======
-    "@aws-sdk/client-cognito-identity-provider": "^3.496.0",
-    "@aws-sdk/client-s3": "^3.496.0",
-    "@aws-sdk/s3-request-presigner": "^3.496.0",
-    "@prisma/client": "^5.8.0",
-    "@types/sqlite3": "^3.1.11",
-    "aws-sdk": "^2.1565.0",
-    "bcrypt": "^5.1.0",
-    "cors": "^2.8.0",
-    "dotenv": "^16.4.0",
-    "exifr": "^7.1.0",
-    "express": "^4.18.0",
-    "express-rate-limit": "^7.1.0",
-    "express-validator": "^7.2.1",
-    "helmet": "^7.1.0",
-    "joi": "^17.12.0",
-    "jsonwebtoken": "^9.0.0",
-    "multer": "^2.0.2",
-    "multer-s3": "^3.0.0",
-    "node-cron": "^3.0.0",
-    "pg": "^8.11.0",
-    "prisma": "^5.8.0",
-    "sharp": "^0.33.0",
-    "sqlite": "^5.1.1",
-    "sqlite3": "^5.1.7",
-    "uuid": "^9.0.0"
-  },
-  "devDependencies": {
-    "@types/bcrypt": "^5.0.0",
->>>>>>> c29745ad016536b3fcc94cb0b4d91795b91dcfdc
->>>>>>> Stashed changes
     "@types/cors": "^2.8.0",
     "@types/express": "^4.17.0",
     "@types/jest": "^29.5.0",
     "@types/jsonwebtoken": "^9.0.0",
-<<<<<<< Updated upstream
-=======
-<<<<<<< HEAD
     "@types/node": "^20.11.0",
-=======
->>>>>>> Stashed changes
-    "@types/multer": "^1.4.0",
-    "@types/node": "^20.11.0",
-    "@types/node-cron": "^3.0.0",
-    "@types/pg": "^8.10.0",
-<<<<<<< Updated upstream
-=======
->>>>>>> c29745ad016536b3fcc94cb0b4d91795b91dcfdc
->>>>>>> Stashed changes
     "@types/uuid": "^9.0.0",
     "@typescript-eslint/eslint-plugin": "^6.19.0",
     "@typescript-eslint/parser": "^6.19.0",
     "eslint": "^8.56.0",
     "jest": "^29.7.0",
     "nodemon": "^3.0.0",
-<<<<<<< Updated upstream
-=======
-<<<<<<< HEAD
     "serverless": "^3.38.0",
     "serverless-offline": "^13.3.0",
     "serverless-plugin-typescript": "^2.1.5",
-=======
->>>>>>> c29745ad016536b3fcc94cb0b4d91795b91dcfdc
->>>>>>> Stashed changes
     "ts-jest": "^29.1.0",
     "ts-node": "^10.9.0",
     "typescript": "^5.3.0"

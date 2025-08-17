@@ -1,38 +1,16 @@
 import express, { Request, Response } from 'express';
-<<<<<<< Updated upstream
-=======
-<<<<<<< HEAD
 import { ObjectId } from 'mongodb';
->>>>>>> Stashed changes
 import { s3Service } from '../services/s3.service';
 import { databaseService } from '../services/database.service';
-import { authMiddleware } from '../middleware/auth.middleware';
+import { checkJwt } from '../middleware/auth.middleware';
+import { ensureUserMiddleware } from '../middleware/ensureUser.middleware';
 import { v4 as uuidv4 } from 'uuid';
-<<<<<<< Updated upstream
-import sharp from 'sharp';
-=======
-=======
-import { s3Service } from '../services/s3.service';
-import { databaseService } from '../services/database.service';
-import { authMiddleware } from '../middleware/auth.middleware';
-import { v4 as uuidv4 } from 'uuid';
-import sharp from 'sharp';
->>>>>>> c29745ad016536b3fcc94cb0b4d91795b91dcfdc
->>>>>>> Stashed changes
 
 const router = express.Router();
 
 // Apply authentication middleware to all routes
-<<<<<<< Updated upstream
-router.use(authMiddleware);
-=======
-<<<<<<< HEAD
 router.use(checkJwt);
 router.use(ensureUserMiddleware);
-=======
-router.use(authMiddleware);
->>>>>>> c29745ad016536b3fcc94cb0b4d91795b91dcfdc
->>>>>>> Stashed changes
 
 // Helper function to format file sizes
 function formatFileSize(bytes: number): string {
@@ -45,26 +23,12 @@ function formatFileSize(bytes: number): string {
 
 /**
  * GET /api/files
-<<<<<<< Updated upstream
- * List user's photos from database
-=======
-<<<<<<< HEAD
  * List user's photos from database with optimized batch URL generation
-=======
- * List user's photos from database
->>>>>>> c29745ad016536b3fcc94cb0b4d91795b91dcfdc
->>>>>>> Stashed changes
  */
 router.get('/', async (req: Request, res: Response) => {
   try {
     const userId = req.user!.id;
-<<<<<<< Updated upstream
-=======
-<<<<<<< HEAD
     const username = req.user!.username;
-=======
->>>>>>> c29745ad016536b3fcc94cb0b4d91795b91dcfdc
->>>>>>> Stashed changes
     const { year, month, limit = '50', offset = '0' } = req.query;
 
     let photos;
@@ -79,9 +43,6 @@ router.get('/', async (req: Request, res: Response) => {
       photos = await databaseService.getUserPhotos(userId, limitNum, offsetNum);
     }
 
-<<<<<<< Updated upstream
-=======
-<<<<<<< HEAD
     // Optimize: Generate batch presigned URLs for better performance
     const photoKeys = photos.map(photo => photo.s3_key);
     
@@ -145,40 +106,6 @@ router.get('/', async (req: Request, res: Response) => {
         },
       });
     }
-=======
->>>>>>> Stashed changes
-    // Get download URLs for photos
-    const photosWithUrls = await Promise.all(
-      photos.map(async (photo) => {
-        try {
-          const urlResult = await s3Service.getObjectUrl(photo.s3_key, 3600);
-          return {
-            ...photo,
-            downloadUrl: urlResult.url,
-            metadata: photo.metadata ? JSON.parse(photo.metadata) : null,
-          };
-        } catch (error) {
-          console.error(`Error getting URL for photo ${photo.id}:`, error);
-          return {
-            ...photo,
-            downloadUrl: null,
-            metadata: photo.metadata ? JSON.parse(photo.metadata) : null,
-          };
-        }
-<<<<<<< Updated upstream
-=======
-      })
-    );
-
-    res.json({
-      success: true,
-      data: {
-        photos: photosWithUrls,
-        count: photos.length,
-        user: req.user!.username,
-      },
-    });
->>>>>>> c29745ad016536b3fcc94cb0b4d91795b91dcfdc
   } catch (error) {
     console.error('Error listing photos:', error);
     res.status(500).json({
@@ -189,7 +116,6 @@ router.get('/', async (req: Request, res: Response) => {
 });
 
 /**
-<<<<<<< HEAD
  * POST /api/files/refresh-urls
  * Refresh expired presigned URLs for batch of photos
  */
@@ -210,53 +136,56 @@ router.post('/refresh-urls', async (req: Request, res: Response) => {
       photoIds.map(async (id: string) => {
         if (!ObjectId.isValid(id)) return null;
         return await databaseService.getPhotoById(id, userId);
->>>>>>> Stashed changes
       })
     );
+
+    const validPhotos = photos.filter(photo => photo !== null);
+    
+    if (validPhotos.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: 'No valid photos found',
+      });
+    }
+
+    // Generate fresh presigned URLs
+    const photoKeys = validPhotos.map(photo => photo!.s3_key);
+    const { urls } = await s3Service.getBatchObjectUrls(photoKeys, 7200);
+    
+    const refreshedUrls = validPhotos.map(photo => {
+      const urlData = urls.find(u => u.key === photo!.s3_key);
+      return {
+        id: photo!._id!.toString(),
+        downloadUrl: urlData?.url || null,
+      };
+    });
 
     res.json({
       success: true,
       data: {
-        photos: photosWithUrls,
-        count: photos.length,
-        user: req.user!.username,
+        urls: refreshedUrls,
+        urlsExpireAt: new Date(Date.now() + 7200 * 1000).toISOString(),
       },
     });
   } catch (error) {
-    console.error('Error listing photos:', error);
+    console.error('Error refreshing URLs:', error);
     res.status(500).json({
       success: false,
-      error: error instanceof Error ? error.message : 'Failed to list photos',
+      error: error instanceof Error ? error.message : 'Failed to refresh URLs',
     });
   }
 });
 
 /**
-=======
->>>>>>> c29745ad016536b3fcc94cb0b4d91795b91dcfdc
  * GET /api/files/:id/download
  * Get download URL for a specific photo
  */
 router.get('/:id/download', async (req: Request, res: Response) => {
   try {
-<<<<<<< Updated upstream
-    const photoId = parseInt(req.params.id);
-    const userId = req.user!.id;
-    
-    if (isNaN(photoId)) {
-=======
-<<<<<<< HEAD
     const photoId = req.params.id;
     const userId = req.user!.id;
     
     if (!ObjectId.isValid(photoId)) {
-=======
-    const photoId = parseInt(req.params.id);
-    const userId = req.user!.id;
-    
-    if (isNaN(photoId)) {
->>>>>>> c29745ad016536b3fcc94cb0b4d91795b91dcfdc
->>>>>>> Stashed changes
       return res.status(400).json({
         success: false,
         error: 'Invalid photo ID',
@@ -280,15 +209,7 @@ router.get('/:id/download', async (req: Request, res: Response) => {
       data: {
         ...result,
         photo: {
-<<<<<<< Updated upstream
-          id: photo.id,
-=======
-<<<<<<< HEAD
           id: photo._id!.toString(),
-=======
-          id: photo.id,
->>>>>>> c29745ad016536b3fcc94cb0b4d91795b91dcfdc
->>>>>>> Stashed changes
           filename: photo.original_name,
           uploadedAt: photo.uploaded_at,
         },
@@ -349,48 +270,22 @@ router.post('/upload-url', async (req: Request, res: Response) => {
       });
     }
 
-<<<<<<< Updated upstream
-    // Create user-specific folder structure: users/{username}/photos/{year}/{month}/
-=======
-<<<<<<< HEAD
     // Create detailed user-specific folder structure: users/{username}/photos/{year}/{month}/{day}/
->>>>>>> Stashed changes
     const now = new Date();
     const year = now.getFullYear();
     const month = (now.getMonth() + 1).toString().padStart(2, '0');
+    const day = now.getDate().toString().padStart(2, '0');
     
     const fileExtension = fileName.split('.').pop();
     const uniqueFilename = `${uuidv4()}.${fileExtension}`;
-<<<<<<< Updated upstream
-    const s3Key = `users/${username}/photos/${year}/${month}/${uniqueFilename}`;
-=======
     const s3Key = `users/${username}/photos/${year}/${month}/${day}/${uniqueFilename}`;
-=======
-    // Create user-specific folder structure: users/{username}/photos/{year}/{month}/
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = (now.getMonth() + 1).toString().padStart(2, '0');
-    
-    const fileExtension = fileName.split('.').pop();
-    const uniqueFilename = `${uuidv4()}.${fileExtension}`;
-    const s3Key = `users/${username}/photos/${year}/${month}/${uniqueFilename}`;
->>>>>>> c29745ad016536b3fcc94cb0b4d91795b91dcfdc
->>>>>>> Stashed changes
     
     // Get presigned upload URL
     const uploadResult = await s3Service.getUploadUrl(s3Key, contentType);
     
     // Save photo metadata to database
     const photoData = {
-<<<<<<< Updated upstream
-      user_id: userId,
-=======
-<<<<<<< HEAD
       user_id: new ObjectId(userId),
-=======
-      user_id: userId,
->>>>>>> c29745ad016536b3fcc94cb0b4d91795b91dcfdc
->>>>>>> Stashed changes
       filename: uniqueFilename,
       s3_key: s3Key,
       original_name: fileName,
@@ -398,18 +293,8 @@ router.post('/upload-url', async (req: Request, res: Response) => {
       file_size: fileSize || 0,
       width: metadata?.width,
       height: metadata?.height,
-<<<<<<< Updated upstream
-      taken_at: metadata?.takenAt,
-      metadata: metadata ? JSON.stringify(metadata) : undefined,
-=======
-<<<<<<< HEAD
       taken_at: metadata?.takenAt ? new Date(metadata.takenAt) : undefined,
       metadata: metadata || undefined,
-=======
-      taken_at: metadata?.takenAt,
-      metadata: metadata ? JSON.stringify(metadata) : undefined,
->>>>>>> c29745ad016536b3fcc94cb0b4d91795b91dcfdc
->>>>>>> Stashed changes
     };
 
     const photo = await databaseService.createPhoto(photoData);
@@ -419,24 +304,10 @@ router.post('/upload-url', async (req: Request, res: Response) => {
       data: {
         ...uploadResult,
         photo: {
-<<<<<<< Updated upstream
-          id: photo.id,
-          filename: photo.filename,
-          s3_key: photo.s3_key,
-          uploadPath: `users/${username}/photos/${year}/${month}/`,
-=======
-<<<<<<< HEAD
           id: photo._id!.toString(),
           filename: photo.filename,
           s3_key: photo.s3_key,
           uploadPath: `users/${username}/photos/${year}/${month}/${day}/`,
-=======
-          id: photo.id,
-          filename: photo.filename,
-          s3_key: photo.s3_key,
-          uploadPath: `users/${username}/photos/${year}/${month}/`,
->>>>>>> c29745ad016536b3fcc94cb0b4d91795b91dcfdc
->>>>>>> Stashed changes
         },
       },
     });
@@ -455,24 +326,10 @@ router.post('/upload-url', async (req: Request, res: Response) => {
  */
 router.delete('/:id', async (req: Request, res: Response) => {
   try {
-<<<<<<< Updated upstream
-    const photoId = parseInt(req.params.id);
-    const userId = req.user!.id;
-    
-    if (isNaN(photoId)) {
-=======
-<<<<<<< HEAD
     const photoId = req.params.id;
     const userId = req.user!.id;
     
     if (!ObjectId.isValid(photoId)) {
-=======
-    const photoId = parseInt(req.params.id);
-    const userId = req.user!.id;
-    
-    if (isNaN(photoId)) {
->>>>>>> c29745ad016536b3fcc94cb0b4d91795b91dcfdc
->>>>>>> Stashed changes
       return res.status(400).json({
         success: false,
         error: 'Invalid photo ID',
