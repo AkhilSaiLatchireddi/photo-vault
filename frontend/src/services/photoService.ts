@@ -1,14 +1,26 @@
 // Frontend photo service with caching
+import { config } from '../config/env';
+
 class PhotoService {
   private urlCache = new Map<string, { url: string; expires: number }>();
-  private apiBaseUrl = import.meta.env.VITE_API_BASE_URL;
+  private apiBaseUrl = config.API_BASE_URL || import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+  private getTokenFunction: (() => Promise<string | null>) | null = null;
+
+  // Initialize with Auth0 token getter
+  initialize(getTokenFunction: () => Promise<string | null>) {
+    this.getTokenFunction = getTokenFunction;
+  }
 
   async getPhotos(useCache = true) {
     const response = await fetch(`${this.apiBaseUrl}/api/files`, {
       headers: {
-        'Authorization': `Bearer ${this.getToken()}`
+        'Authorization': `Bearer ${await this.getToken()}`
       }
     });
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
 
     const data = await response.json();
     
@@ -47,11 +59,15 @@ class PhotoService {
     const response = await fetch(`${this.apiBaseUrl}/api/files/refresh-urls`, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${this.getToken()}`,
+        'Authorization': `Bearer ${await this.getToken()}`,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({ photoIds })
     });
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
 
     const data = await response.json();
     
@@ -70,9 +86,12 @@ class PhotoService {
     return data.data.urls;
   }
 
-  private getToken() {
-    // Your auth token logic
-    return localStorage.getItem('auth_token');
+  private async getToken(): Promise<string | null> {
+    if (!this.getTokenFunction) {
+      console.error('PhotoService not initialized with token function');
+      return null;
+    }
+    return await this.getTokenFunction();
   }
 }
 

@@ -1,9 +1,30 @@
 import { useAuth0 } from "@auth0/auth0-react";
 import PhotoDashboard from './components/PhotoDashboard'
 import AuthPage from './components/AuthPage'
+import { photoService } from './services/photoService';
+import { useEffect } from 'react';
 
 const App = () => {
-  const { isLoading, error, isAuthenticated } = useAuth0();
+  const { isLoading, error, isAuthenticated, getAccessTokenSilently } = useAuth0();
+
+  // Initialize photo service with Auth0 token getter
+  useEffect(() => {
+    const getToken = async () => {
+      try {
+        const audience = import.meta.env.VITE_AUTH0_AUDIENCE;
+        return await getAccessTokenSilently({
+          authorizationParams: {
+            ...(audience ? { audience } : {})
+          }
+        });
+      } catch (error) {
+        console.error('Error getting token:', error);
+        return null;
+      }
+    };
+
+    photoService.initialize(getToken);
+  }, [getAccessTokenSilently]);
 
   if (error) {
     return (

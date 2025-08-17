@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useAuth0 } from '@auth0/auth0-react';
 import { Camera, Upload, Download, Trash2, Image, AlertCircle, LogOut, User, BarChart } from 'lucide-react';
 import UserProfile from './UserProfileClean';
+import { config } from '../config/env';
 
 // Debug logging helper
 const DEBUG = import.meta.env.VITE_DEBUG === 'true' || localStorage.getItem('DEBUG') === 'true';
@@ -36,7 +37,7 @@ interface PhotoStats {
   user: string;
 }
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+const API_BASE_URL = config.API_BASE_URL || import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
 debugLog('🌐 API_BASE_URL configured:', API_BASE_URL);
 
 export default function PhotoDashboard() {
@@ -72,7 +73,7 @@ export default function PhotoDashboard() {
   const getToken = async () => {
     debugLog('🎫 Getting Auth0 token...');
     try {
-      const audience = import.meta.env.VITE_AUTH0_AUDIENCE;
+      const audience = config.AUTH0_AUDIENCE;
       return await getAccessTokenSilently({
         authorizationParams: {
           ...(audience ? { audience } : {})

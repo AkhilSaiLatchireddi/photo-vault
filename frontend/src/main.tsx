@@ -5,8 +5,17 @@ import './index.css'
 import { Auth0Provider } from "@auth0/auth0-react";
 import { config } from './config/env.ts';
 
-console.log('Starting PhotoVault app...');
-console.log('Environment debug:', {
+const DEBUG = import.meta.env.VITE_DEBUG === 'true' || localStorage.getItem('DEBUG') === 'true';
+const debugLog = (...args: any[]) => {
+  if (DEBUG) {
+    console.log('[PHOTO-DASHBOARD-DEBUG]', new Date().toISOString(), ...args);
+  }
+};
+
+debugLog('main component loaded');
+
+debugLog('Starting PhotoVault app...');
+debugLog('Environment debug:', {
   NODE_ENV: import.meta.env.NODE_ENV,
   PROD: import.meta.env.PROD,
   hostname: window.location.hostname,
@@ -18,9 +27,11 @@ console.log('Environment debug:', {
 // Get Auth0 configuration from environment variables
 const domain = config.AUTH0_DOMAIN;
 const clientId = config.AUTH0_CLIENT_ID;
-const audience = import.meta.env.VITE_AUTH0_AUDIENCE || '';
+const audience = config.AUTH0_AUDIENCE || '';
 
-console.log('Auth0 config:', { domain, clientId, audience: audience ? 'set' : 'not set' });
+debugLog('Auth0 config:', { domain, clientId, audience: audience ? 'set' : 'not set' });
+debugLog('redirect uri', config.redirectUri);
+
 
 const providerConfig = {
   domain,

@@ -3,6 +3,7 @@ export const config = {
   API_BASE_URL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001',
   AUTH0_DOMAIN: import.meta.env.VITE_AUTH0_DOMAIN || '',
   AUTH0_CLIENT_ID: import.meta.env.VITE_AUTH0_CLIENT_ID || '',
+  AUTH0_AUDIENCE: import.meta.env.VITE_AUTH0_AUDIENCE || '',
   ENVIRONMENT: import.meta.env.NODE_ENV || 'development',
   
   // Derived values
