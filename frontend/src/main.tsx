@@ -3,12 +3,13 @@ import ReactDOM from 'react-dom/client'
 import App from './App.tsx'
 import './index.css'
 import { Auth0Provider } from "@auth0/auth0-react";
+import { config } from './config/env.ts';
 
 console.log('Starting PhotoVault app...');
 
 // Get Auth0 configuration from environment variables
-const domain = import.meta.env.VITE_AUTH0_DOMAIN || '';
-const clientId = import.meta.env.VITE_AUTH0_CLIENT_ID || '';
+const domain = config.AUTH0_DOMAIN;
+const clientId = config.AUTH0_CLIENT_ID;
 const audience = import.meta.env.VITE_AUTH0_AUDIENCE || '';
 
 console.log('Auth0 config:', { domain, clientId, audience: audience ? 'set' : 'not set' });
@@ -17,7 +18,7 @@ const providerConfig = {
   domain,
   clientId,
   authorizationParams: {
-    redirect_uri: window.location.origin,
+    redirect_uri: config.redirectUri,
     ...(audience ? { audience } : {}),
   },
 };
