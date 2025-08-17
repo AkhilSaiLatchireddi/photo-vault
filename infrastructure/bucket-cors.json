@@ -1,0 +1,11 @@
+{
+  "CORSRules": [
+    {
+      "AllowedOrigins": ["http://localhost:3000", "http://localhost:3001", "http://localhost:3002", "https://akhilsailatchireddi.github.io"],
+      "AllowedHeaders": ["*"],
+      "AllowedMethods": ["GET", "PUT", "POST", "DELETE", "HEAD"],
+      "MaxAgeSeconds": 3000,
+      "ExposeHeaders": ["ETag"]
+    }
+  ]
+}

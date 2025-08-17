@@ -1,0 +1,104 @@
+service: photovault-backend
+
+provider:
+  name: aws
+  runtime: nodejs18.x
+  region: ${opt:region, 'us-east-1'}
+  stage: ${opt:stage, 'dev'}
+  
+  environment:
+    NODE_ENV: production
+    AWS_REGION: ${self:provider.region}
+    MONGODB_URI: ${ssm:/photovault/${self:provider.stage}/mongodb-uri~true}
+    JWT_SECRET: ${ssm:/photovault/${self:provider.stage}/jwt-secret~true}
+    S3_BUCKET_NAME: ${ssm:/photovault/${self:provider.stage}/s3-bucket}
+    AUTH0_DOMAIN: ${ssm:/photovault/${self:provider.stage}/auth0-domain}
+    AUTH0_CLIENT_ID: ${ssm:/photovault/${self:provider.stage}/auth0-client-id}
+    
+  iam:
+    role:
+      statements:
+        # S3 permissions
+        - Effect: Allow
+          Action:
+            - s3:GetObject
+            - s3:PutObject
+            - s3:DeleteObject
+            - s3:GetObjectVersion
+          Resource: "arn:aws:s3:::photovault-storage-${self:provider.stage}/*"
+        - Effect: Allow
+          Action:
+            - s3:ListBucket
+          Resource: "arn:aws:s3:::photovault-storage-${self:provider.stage}"
+        
+        # SSM permissions for secrets
+        - Effect: Allow
+          Action:
+            - ssm:GetParameter
+            - ssm:GetParameters
+            - ssm:GetParametersByPath
+          Resource: "arn:aws:ssm:${self:provider.region}:*:parameter/photovault/${self:provider.stage}/*"
+        
+        # CloudWatch Logs
+        - Effect: Allow
+          Action:
+            - logs:CreateLogGroup
+            - logs:CreateLogStream
+            - logs:PutLogEvents
+          Resource: "arn:aws:logs:${self:provider.region}:*:*"
+
+functions:
+  api:
+    handler: dist/lambda.handler
+    timeout: 30
+    memorySize: 256
+    events:
+      - http:
+          path: /{proxy+}
+          method: ANY
+          cors:
+            origin: 
+              - https://akhilsailatchireddi.github.io
+              - http://localhost:3000
+            headers:
+              - Content-Type
+              - X-Amz-Date
+              - Authorization
+              - X-Api-Key
+              - X-Amz-Security-Token
+              - X-Amz-User-Agent
+              - X-Requested-With
+            allowCredentials: true
+      - http:
+          path: /
+          method: ANY
+          cors:
+            origin: 
+              - https://akhilsailatchireddi.github.io
+              - http://localhost:3000
+            headers:
+              - Content-Type
+              - X-Amz-Date
+              - Authorization
+              - X-Api-Key
+              - X-Amz-Security-Token
+              - X-Amz-User-Agent
+              - X-Requested-With
+            allowCredentials: true
+
+plugins:
+  - serverless-plugin-typescript
+  - serverless-offline
+
+custom:
+  serverless-offline:
+    httpPort: 3001
+    host: 0.0.0.0
+
+package:
+  patterns:
+    - '!src/**'
+    - '!node_modules/.prisma/client/libquery_engine-*'
+    - 'node_modules/.prisma/client/libquery_engine-rhel-*'
+    - '!node_modules/prisma/libquery_engine-*'
+    - '!node_modules/@prisma/engines/**'
