@@ -68,9 +68,13 @@ Thumbs.db
 *.db
 *.sqlite
 
-# Prisma
-/prisma/migrations/
+# MongoDB
+/backend/data/
+*.db
+*.db-journal
 
 # S3 Local
 /uploads/
 /temp/
+
+dist/

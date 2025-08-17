@@ -26,10 +26,10 @@ PhotoVault is a comprehensive photo and video storage solution that addresses th
 
 - **Frontend**: Next.js 14 with TypeScript and Tailwind CSS
 - **Backend**: Node.js with Express and TypeScript
-- **Database**: Amazon RDS (PostgreSQL) for metadata
+- **Database**: MongoDB for user data and photo metadata
 - **Storage**: Amazon S3 for photos and videos
 - **CDN**: Amazon CloudFront for fast image delivery
-- **Authentication**: AWS Cognito
+- **Authentication**: JWT with bcrypt password hashing
 - **Image Processing**: AWS Lambda for thumbnail generation
 - **Search**: Amazon OpenSearch for metadata search
 - **Hosting**: AWS ECS/Fargate for containerized deployment
