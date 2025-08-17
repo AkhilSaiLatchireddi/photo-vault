@@ -7,17 +7,23 @@ export const config = {
   
   // Derived values
   get isProduction() {
-    return this.ENVIRONMENT === 'production';
+    // Check multiple indicators for production
+    return this.ENVIRONMENT === 'production' || 
+           import.meta.env.PROD ||
+           window.location.hostname === 'akhilsailatchireddi.github.io';
   },
   
   get isDevelopment() {
-    return this.ENVIRONMENT === 'development';
+    return !this.isProduction;
   },
   
   get redirectUri() {
-    return this.isProduction 
-      ? 'https://akhilsailatchireddi.github.io/photo-vault'
-      : window.location.origin;
+    // For GitHub Pages, always use the full path
+    if (window.location.hostname === 'akhilsailatchireddi.github.io') {
+      return 'https://akhilsailatchireddi.github.io/photo-vault/';
+    }
+    // For local development
+    return window.location.origin;
   }
 };
 

@@ -6,6 +6,14 @@ import { Auth0Provider } from "@auth0/auth0-react";
 import { config } from './config/env.ts';
 
 console.log('Starting PhotoVault app...');
+console.log('Environment debug:', {
+  NODE_ENV: import.meta.env.NODE_ENV,
+  PROD: import.meta.env.PROD,
+  hostname: window.location.hostname,
+  origin: window.location.origin,
+  isProduction: config.isProduction,
+  redirectUri: config.redirectUri
+});
 
 // Get Auth0 configuration from environment variables
 const domain = config.AUTH0_DOMAIN;
