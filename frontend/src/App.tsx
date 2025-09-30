@@ -3,6 +3,16 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import { lazy, Suspense, useEffect } from 'react';
 import { photoService } from './services/photoService';
 
+// Get base path for GitHub Pages deployment
+const getBasePath = () => {
+  // For GitHub Pages, use /photo-vault/
+  if (window.location.hostname === 'akhilsailatchireddi.github.io') {
+    return '/photo-vault';
+  }
+  // For local development
+  return '/';
+};
+
 // Lazy load page components for code splitting
 const HomePage = lazy(() => import('./pages/HomePage'));
 const AlbumsListPage = lazy(() => import('./pages/AlbumsListPage'));
