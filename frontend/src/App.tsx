@@ -73,7 +73,7 @@ const App = () => {
   }
 
   return (
-    <Router>
+    <Router basename={getBasePath()}>
       <div className="min-h-screen">
         <Suspense fallback={<LoadingFallback />}>
           <Routes>
