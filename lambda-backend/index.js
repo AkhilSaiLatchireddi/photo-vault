@@ -13,39 +13,52 @@ const database_service_1 = require("./services/database.service");
 const profile_routes_1 = __importDefault(require("./routes/profile.routes"));
 const auth0_routes_1 = __importDefault(require("./routes/auth0.routes"));
 const files_routes_1 = __importDefault(require("./routes/files.routes"));
-if (process.env.NODE_ENV !== 'production') {
-    dotenv_1.default.config();
-}
+const albums_routes_1 = __importDefault(require("./routes/albums.routes"));
+const public_routes_1 = __importDefault(require("./routes/public.routes"));
+// Debug logging setup
 const DEBUG = process.env.DEBUG === 'true';
-const debugLog = (...args) => {
+const debugLog = (message, data) => {
     if (DEBUG) {
-        console.log('[DEBUG]', new Date().toISOString(), ...args);
+        const timestamp = new Date().toISOString();
+        console.log(`[BACKEND-DEBUG] ${timestamp}: ${message}`, data || '');
     }
 };
-debugLog('🚀 Starting PhotoVault Lambda initialization');
-debugLog('Environment variables:', {
-    NODE_ENV: process.env.NODE_ENV,
-    AWS_LAMBDA_FUNCTION_NAME: process.env.AWS_LAMBDA_FUNCTION_NAME,
-    DEBUG: process.env.DEBUG
-});
+debugLog('Backend application starting', { nodeEnv: process.env.NODE_ENV });
+// Load environment variables (for local development)
+// In Lambda, environment variables are provided by AWS
+if (process.env.NODE_ENV !== 'production') {
+    debugLog('Loading .env file for development');
+    dotenv_1.default.config();
+}
+else {
+    debugLog('Production mode - using environment variables from runtime');
+}
 const app = (0, express_1.default)();
 const PORT = process.env.PORT || 3001;
-debugLog('📡 Setting trust proxy to true');
-app.set('trust proxy', true);
+debugLog('Express app created', { port: PORT });
+// Determine CORS origins based on environment
 const getAllowedOrigins = () => {
-    const origins = ['http://localhost:3000'];
+    debugLog('Calculating allowed CORS origins');
+    const origins = ['http://localhost:3000']; // Always allow localhost for development
     if (process.env.NODE_ENV === 'production') {
         origins.push('https://akhilsailatchireddi.github.io');
+        debugLog('Production mode - added GitHub Pages origin');
     }
     else {
+        // For local development, also allow the frontend URL if specified
         const frontendUrl = process.env.FRONTEND_URL || `http://localhost:${process.env.FRONTEND_PORT || 3000}`;
         if (!origins.includes(frontendUrl)) {
             origins.push(frontendUrl);
         }
+        debugLog('Development mode - added local frontend URLs');
     }
+    debugLog('CORS origins configured', { origins });
     return origins;
 };
+// Security middleware
+debugLog('Configuring security middleware');
 app.use((0, helmet_1.default)({
+    // Configure CSP for Lambda/API Gateway
     contentSecurityPolicy: process.env.NODE_ENV === 'production' ? {
         directives: {
             defaultSrc: ["'self'"],
@@ -54,37 +67,20 @@ app.use((0, helmet_1.default)({
             imgSrc: ["'self'", "data:", "https:"],
             connectSrc: ["'self'", "https:"],
         },
-    } : false
+    } : false // Disable CSP in development
 }));
+// Rate limiting (less aggressive for Lambda due to cold starts)
+debugLog('Configuring rate limiting');
 const limiter = (0, express_rate_limit_1.default)({
-    windowMs: 15 * 60 * 1000,
-    max: process.env.NODE_ENV === 'production' ? 1000 : 1000,
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: process.env.NODE_ENV === 'production' ? 200 : 1000, // More lenient for Lambda
     message: 'Too many requests from this IP, please try again later.',
     standardHeaders: true,
     legacyHeaders: false,
-    keyGenerator: (req) => {
-        const forwardedFor = req.headers['x-forwarded-for'];
-        const clientIp = Array.isArray(forwardedFor) ? forwardedFor[0] : forwardedFor;
-        return clientIp || req.connection.remoteAddress || 'unknown';
-    },
-    skip: (req) => {
-        return req.path === '/health';
-    },
 });
 app.use('/api', limiter);
-app.use('/api', async (req, res, next) => {
-    try {
-        await initializeDatabaseIfNeeded();
-        next();
-    }
-    catch (error) {
-        console.error('Database not available:', error);
-        res.status(503).json({
-            error: 'Service Unavailable',
-            message: 'Database connection failed'
-        });
-    }
-});
+// CORS configuration
+debugLog('Configuring CORS');
 const corsOptions = {
     origin: getAllowedOrigins(),
     credentials: true,
@@ -93,17 +89,26 @@ const corsOptions = {
     exposedHeaders: ['Content-Range', 'X-Content-Range']
 };
 app.use((0, cors_1.default)(corsOptions));
+// Body parsing middleware
+debugLog('Configuring body parsing middleware');
 app.use(express_1.default.json({ limit: '10mb' }));
 app.use(express_1.default.urlencoded({ extended: true, limit: '10mb' }));
+// Add request logging for Lambda
+debugLog('Configuring request logging middleware');
 app.use((req, res, next) => {
     const start = Date.now();
+    debugLog('Request received', { method: req.method, path: req.path, headers: req.headers.authorization ? 'Bearer ***' : 'none' });
     res.on('finish', () => {
         const duration = Date.now() - start;
         console.log(`${req.method} ${req.path} - ${res.statusCode} (${duration}ms)`);
+        debugLog('Request completed', { method: req.method, path: req.path, status: res.statusCode, duration: `${duration}ms` });
     });
     next();
 });
+// Health check endpoint
+debugLog('Setting up health check endpoint');
 app.get('/health', (req, res) => {
+    debugLog('Health check endpoint hit');
     res.status(200).json({
         status: 'OK',
         message: 'PhotoVault API is running',
@@ -113,142 +118,79 @@ app.get('/health', (req, res) => {
         region: process.env.AWS_REGION || 'us-east-1'
     });
 });
+// Public API endpoint for testing (similar to Auth0 sample)
+debugLog('Setting up external API test endpoint');
 app.get("/api/external", auth_middleware_1.checkJwt, (req, res) => {
+    debugLog('External API endpoint hit', { hasAuth: !!req.auth });
     res.send({
         msg: "Your access token was successfully validated!",
         user: req.auth
     });
 });
-
-// Database initialization middleware - ensure DB is ready for each API call
-app.use('/api', async (req, res, next) => {
-    debugLog('Database middleware called', { 
-        path: req.path, 
-        method: req.method,
-        isDbInitialized 
-    });
-    
-    try {
-        if (!isDbInitialized) {
-            debugLog('Database not initialized, initializing now...');
-            await initializeDatabaseIfNeeded();
-            debugLog('Database initialization completed in middleware');
-        }
-        next();
-    } catch (error) {
-        debugLog('❌ Database initialization failed in middleware', {
-            errorMessage: error.message,
-            path: req.path,
-            method: req.method
-        });
-        
-        res.status(500).json({
-            success: false,
-            error: 'Database connection failed',
-            details: DEBUG ? error.message : undefined
-        });
-    }
-});
-
-debugLog('Setting up API routes...');
+// Routes
+debugLog('Configuring API routes');
 app.use('/api/profile', profile_routes_1.default);
 app.use('/api/auth0', auth0_routes_1.default);
 app.use('/api/files', files_routes_1.default);
+app.use('/api/albums', albums_routes_1.default);
+app.use('/api/public/albums', public_routes_1.default); // Public routes - no auth required
+// 404 handler
+debugLog('Setting up 404 handler');
 app.use('*', (req, res) => {
+    debugLog('404 error - route not found', { originalUrl: req.originalUrl });
     res.status(404).json({
         error: 'Not Found',
         message: `Route ${req.originalUrl} not found`,
     });
 });
+// Error handling middleware
+debugLog('Setting up error handling middleware');
 app.use((err, req, res, next) => {
+    debugLog('Error caught by error handler', {
+        error: err.message,
+        status: err.status,
+        path: req.originalUrl
+    });
     console.error('Error:', err);
     res.status(err.status || 500).json({
         error: process.env.NODE_ENV === 'production' ? 'Internal Server Error' : err.message,
         ...(process.env.NODE_ENV !== 'production' && { stack: err.stack }),
     });
 });
-let isDbInitialized = false;
-async function initializeDatabaseIfNeeded() {
-    debugLog('initializeDatabaseIfNeeded() called', { isDbInitialized });
-    
-    if (isDbInitialized) {
-        debugLog('Database already initialized, skipping');
-        return;
-    }
-    
-    try {
-        debugLog('🔌 Starting database initialization...');
-        console.log('🔌 Initializing database connection...');
-        
-        debugLog('Creating database initialization promise...');
-        const dbPromise = database_service_1.databaseService.initialize();
-        
-        debugLog('Creating timeout promise (10 seconds)...');
-        const timeoutPromise = new Promise((_, reject) => 
-            setTimeout(() => reject(new Error('Database connection timeout')), 10000)
-        );
-        
-        debugLog('Racing database connection vs timeout...');
-        await Promise.race([dbPromise, timeoutPromise]);
-        
-        isDbInitialized = true;
-        debugLog('✅ Database initialization completed successfully');
-        console.log('✅ Database connection established');
-    }
-    catch (error) {
-        debugLog('❌ Database initialization failed', {
-            errorMessage: error.message,
-            errorName: error.name,
-            errorStack: error.stack
-        });
-        console.error('❌ Database connection failed:', error);
-        isDbInitialized = false;
-        throw error;
-    }
-}
+// Database initialization and server startup
 async function initializeApp() {
-    debugLog('initializeApp() called');
-    
+    debugLog('Starting application initialization');
     try {
-        debugLog('Checking environment type', {
-            isLambda: !!process.env.AWS_LAMBDA_FUNCTION_NAME,
-            lambdaFunctionName: process.env.AWS_LAMBDA_FUNCTION_NAME
-        });
-        
+        // Initialize database connection
+        debugLog('Initializing database connection');
+        console.log('🔌 Initializing database connection...');
+        await database_service_1.databaseService.initialize();
+        debugLog('Database connection established successfully');
+        console.log('✅ Database connection established');
+        // In Lambda, we don't start a server - the handler takes care of requests
         if (process.env.AWS_LAMBDA_FUNCTION_NAME) {
-            debugLog('Lambda environment detected, initializing database...');
-            // Initialize database for Lambda environment too!
-            await initializeDatabaseIfNeeded();
-            debugLog('Lambda database initialization completed');
+            debugLog('Lambda environment detected - API ready');
             console.log('🚀 PhotoVault API initialized for Lambda');
         }
         else {
-            debugLog('Local environment detected, initializing database and starting server...');
-            await initializeDatabaseIfNeeded();
+            debugLog('Local development environment - starting server');
+            // Start server for local development
             app.listen(PORT, () => {
-                debugLog('Local server started', { port: PORT });
+                debugLog('Local server started successfully', { port: PORT });
                 console.log(`🚀 PhotoVault API server running on port ${PORT}`);
                 console.log(`🌐 Environment: ${process.env.NODE_ENV || 'development'}`);
                 console.log(`🔗 CORS Origins: ${getAllowedOrigins().join(', ')}`);
             });
         }
-        
-        debugLog('App initialization completed successfully');
     }
     catch (error) {
-        debugLog('❌ App initialization failed', {
-            errorMessage: error.message,
-            errorName: error.name,
-            errorStack: error.stack,
-            isLambda: !!process.env.AWS_LAMBDA_FUNCTION_NAME
-        });
+        debugLog('Application initialization failed', { error: error instanceof Error ? error.message : String(error) });
         console.error('❌ Failed to initialize app:', error);
-        
         if (!process.env.AWS_LAMBDA_FUNCTION_NAME) {
-            debugLog('Exiting process due to initialization failure');
             process.exit(1);
         }
     }
 }
+// Initialize the app
 initializeApp();
 exports.default = app;

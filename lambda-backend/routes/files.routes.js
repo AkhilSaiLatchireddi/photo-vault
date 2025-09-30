@@ -11,8 +11,10 @@ const auth_middleware_1 = require("../middleware/auth.middleware");
 const ensureUser_middleware_1 = require("../middleware/ensureUser.middleware");
 const uuid_1 = require("uuid");
 const router = express_1.default.Router();
+// Apply authentication middleware to all routes
 router.use(auth_middleware_1.checkJwt);
 router.use(ensureUser_middleware_1.ensureUserMiddleware);
+// Helper function to format file sizes
 function formatFileSize(bytes) {
     if (bytes === 0)
         return '0 Bytes';
@@ -21,6 +23,10 @@ function formatFileSize(bytes) {
     const i = Math.floor(Math.log(bytes) / Math.log(k));
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 }
+/**
+ * GET /api/files
+ * List user's photos from database with optimized batch URL generation
+ */
 router.get('/', async (req, res) => {
     try {
         const userId = req.user.id;
@@ -37,8 +43,10 @@ router.get('/', async (req, res) => {
             const offsetNum = parseInt(offset);
             photos = await database_service_1.databaseService.getUserPhotos(userId, limitNum, offsetNum);
         }
+        // Optimize: Generate batch presigned URLs for better performance
         const photoKeys = photos.map(photo => photo.s3_key);
         try {
+            // Use longer expiry for photo galleries (2 hours)
             const batchUrlResult = await s3_service_1.s3Service.getBatchObjectUrls(photoKeys, 7200);
             const photosWithUrls = photos.map((photo) => {
                 const urlData = batchUrlResult.urls.find(u => u.key === photo.s3_key);
@@ -56,12 +64,13 @@ router.get('/', async (req, res) => {
                     count: photos.length,
                     user: username,
                     userId: userId,
-                    urlsExpireAt: new Date(Date.now() + 7200 * 1000).toISOString(),
+                    urlsExpireAt: new Date(Date.now() + 7200 * 1000).toISOString(), // 2 hours from now
                 },
             });
         }
         catch (urlError) {
             console.error('Error generating batch URLs, falling back to individual:', urlError);
+            // Fallback to individual URL generation
             const photosWithUrls = await Promise.all(photos.map(async (photo) => {
                 try {
                     const urlResult = await s3_service_1.s3Service.getObjectUrl(photo.s3_key, 3600);
@@ -101,6 +110,10 @@ router.get('/', async (req, res) => {
         });
     }
 });
+/**
+ * POST /api/files/refresh-urls
+ * Refresh expired presigned URLs for batch of photos
+ */
 router.post('/refresh-urls', async (req, res) => {
     try {
         const { photoIds } = req.body;
@@ -111,6 +124,7 @@ router.post('/refresh-urls', async (req, res) => {
                 error: 'photoIds array is required',
             });
         }
+        // Validate all photo IDs belong to the user
         const photos = await Promise.all(photoIds.map(async (id) => {
             if (!mongodb_1.ObjectId.isValid(id))
                 return null;
@@ -123,6 +137,7 @@ router.post('/refresh-urls', async (req, res) => {
                 error: 'No valid photos found',
             });
         }
+        // Generate fresh presigned URLs
         const photoKeys = validPhotos.map(photo => photo.s3_key);
         const { urls } = await s3_service_1.s3Service.getBatchObjectUrls(photoKeys, 7200);
         const refreshedUrls = validPhotos.map(photo => {
@@ -148,6 +163,10 @@ router.post('/refresh-urls', async (req, res) => {
         });
     }
 });
+/**
+ * GET /api/files/:id/download
+ * Get download URL for a specific photo
+ */
 router.get('/:id/download', async (req, res) => {
     try {
         const photoId = req.params.id;
@@ -158,6 +177,7 @@ router.get('/:id/download', async (req, res) => {
                 error: 'Invalid photo ID',
             });
         }
+        // Get photo from database (ensure user owns it)
         const photo = await database_service_1.databaseService.getPhotoById(photoId, userId);
         if (!photo) {
             return res.status(404).json({
@@ -186,6 +206,10 @@ router.get('/:id/download', async (req, res) => {
         });
     }
 });
+/**
+ * GET /api/files/stats
+ * Get user's photo statistics
+ */
 router.get('/stats', async (req, res) => {
     try {
         const userId = req.user.id;
@@ -210,6 +234,10 @@ router.get('/stats', async (req, res) => {
         });
     }
 });
+/**
+ * POST /api/files/upload-url
+ * Get presigned URL for uploading a file and save metadata
+ */
 router.post('/upload-url', async (req, res) => {
     try {
         const { fileName, contentType, fileSize, metadata } = req.body;
@@ -221,6 +249,7 @@ router.post('/upload-url', async (req, res) => {
                 error: 'fileName and contentType are required',
             });
         }
+        // Create detailed user-specific folder structure: users/{username}/photos/{year}/{month}/{day}/
         const now = new Date();
         const year = now.getFullYear();
         const month = (now.getMonth() + 1).toString().padStart(2, '0');
@@ -228,7 +257,9 @@ router.post('/upload-url', async (req, res) => {
         const fileExtension = fileName.split('.').pop();
         const uniqueFilename = `${(0, uuid_1.v4)()}.${fileExtension}`;
         const s3Key = `users/${username}/photos/${year}/${month}/${day}/${uniqueFilename}`;
+        // Get presigned upload URL
         const uploadResult = await s3_service_1.s3Service.getUploadUrl(s3Key, contentType);
+        // Save photo metadata to database
         const photoData = {
             user_id: new mongodb_1.ObjectId(userId),
             filename: uniqueFilename,
@@ -263,6 +294,10 @@ router.post('/upload-url', async (req, res) => {
         });
     }
 });
+/**
+ * DELETE /api/files/:id
+ * Delete a user's photo (database record and S3 object)
+ */
 router.delete('/:id', async (req, res) => {
     try {
         const photoId = req.params.id;
@@ -273,6 +308,7 @@ router.delete('/:id', async (req, res) => {
                 error: 'Invalid photo ID',
             });
         }
+        // Get photo from database (ensure user owns it)
         const photo = await database_service_1.databaseService.getPhotoById(photoId, userId);
         if (!photo) {
             return res.status(404).json({
@@ -280,12 +316,15 @@ router.delete('/:id', async (req, res) => {
                 error: 'Photo not found or you do not have permission to delete it',
             });
         }
+        // Delete from S3
         try {
             await s3_service_1.s3Service.deleteObject(photo.s3_key);
         }
         catch (s3Error) {
             console.error('Error deleting from S3:', s3Error);
+            // Continue with database deletion even if S3 fails
         }
+        // Delete from database
         const deleted = await database_service_1.databaseService.deletePhoto(photoId, userId);
         if (deleted) {
             res.json({
@@ -308,6 +347,10 @@ router.delete('/:id', async (req, res) => {
         });
     }
 });
+/**
+ * GET /api/files/health
+ * Check S3 bucket connectivity
+ */
 router.get('/health', async (req, res) => {
     try {
         const result = await s3_service_1.s3Service.checkBucketAccess();

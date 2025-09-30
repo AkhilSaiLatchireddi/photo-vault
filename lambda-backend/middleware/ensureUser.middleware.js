@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ensureUserMiddleware = void 0;
 const database_service_1 = require("../services/database.service");
+// Function to fetch user info from Auth0 userinfo endpoint
 async function fetchAuth0UserInfo(accessToken) {
     try {
         const response = await fetch(`https://${process.env.AUTH0_DOMAIN}/userinfo`, {
@@ -30,6 +31,7 @@ const ensureUserMiddleware = async (req, res, next) => {
         }
         const auth0Id = req.auth.payload.sub;
         let email = (req.auth.payload.email || req.auth.payload[`${process.env.AUTH0_DOMAIN}/email`]);
+        // If email not in token, try to fetch from Auth0 userinfo endpoint
         if (!email) {
             const authHeader = req.headers.authorization;
             if (authHeader && authHeader.startsWith('Bearer ')) {
@@ -40,8 +42,10 @@ const ensureUserMiddleware = async (req, res, next) => {
                 }
             }
         }
+        // Try to get existing user
         let user = await database_service_1.databaseService.getUserByAuth0Id(auth0Id);
         if (!user && email) {
+            // Create user if doesn't exist
             try {
                 const name = req.auth.payload.name || email.split('@')[0];
                 user = await database_service_1.databaseService.createAuth0User({
@@ -66,6 +70,7 @@ const ensureUserMiddleware = async (req, res, next) => {
                 message: 'User not found and could not be created - email not available'
             });
         }
+        // Attach user to request
         req.user = {
             id: user._id?.toString() || '',
             username: user.username,

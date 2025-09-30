@@ -11,9 +11,12 @@ async function ensureUserExists(req) {
     if (!userId) {
         throw new Error('User not authenticated');
     }
+    // Get user from database or create if doesn't exist
     let user = await database_service_1.databaseService.getUserByAuth0Id(userId);
     if (!user) {
+        // Extract username from email or use a default
         const username = userEmail ? userEmail.split('@')[0] : `user_${Date.now()}`;
+        // Create user with Auth0 data
         user = await database_service_1.databaseService.createAuth0User({
             auth0Id: userId,
             username: username,

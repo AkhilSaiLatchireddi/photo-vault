@@ -8,6 +8,8 @@ import { databaseService } from './services/database.service';
 import profileRoutes from './routes/profile.routes';
 import auth0Routes from './routes/auth0.routes';
 import filesRoutes from './routes/files.routes';
+import albumsRoutes from './routes/albums.routes';
+import publicRoutes from './routes/public.routes';
 
 // Debug logging setup
 const DEBUG = process.env.DEBUG === 'true';
@@ -125,6 +127,8 @@ app.get('/health', (req, res) => {
   });
 });
 
+
+
 // Public API endpoint for testing (similar to Auth0 sample)
 debugLog('Setting up external API test endpoint');
 app.get("/api/external", checkJwt, (req, res) => {
@@ -140,6 +144,8 @@ debugLog('Configuring API routes');
 app.use('/api/profile', profileRoutes);
 app.use('/api/auth0', auth0Routes);
 app.use('/api/files', filesRoutes);
+app.use('/api/albums', albumsRoutes);
+app.use('/api/public/albums', publicRoutes); // Public routes - no auth required
 
 // 404 handler
 debugLog('Setting up 404 handler');

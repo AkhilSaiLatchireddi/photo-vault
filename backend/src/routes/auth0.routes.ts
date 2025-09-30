@@ -94,4 +94,43 @@ router.post('/sync', checkJwt, ensureUserMiddleware, async (req: Request, res: R
   }
 });
 
+/**
+ * Debug endpoint to inspect JWT token details
+ */
+router.post('/debug-token', async (req: Request, res: Response) => {
+  try {
+    const authHeader = req.headers.authorization;
+    
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(400).json({
+        success: false,
+        message: 'No Bearer token provided',
+      });
+    }
+
+    const token = authHeader.substring(7);
+    
+    // Decode JWT payload (without verification for debug purposes)
+    const payload = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString());
+    
+    res.json({
+      success: true,
+      tokenPayload: payload,
+      expectedAudience: process.env.AUTH0_AUDIENCE,
+      actualAudience: payload.aud,
+      audienceMatch: payload.aud === process.env.AUTH0_AUDIENCE,
+      issuer: payload.iss,
+      subject: payload.sub,
+      scopes: payload.scope
+    });
+  } catch (error) {
+    console.error('Debug token error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to decode token',
+      error: error instanceof Error ? error.message : String(error)
+    });
+  }
+});
+
 export default router;

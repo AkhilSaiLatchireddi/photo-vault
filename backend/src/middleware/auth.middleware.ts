@@ -3,7 +3,7 @@ import { auth } from "express-oauth2-jwt-bearer";
 // Load environment variables - in production (Lambda), these come from AWS SSM
 const authConfig = {
   domain: process.env.AUTH0_DOMAIN || "akhil-dev-app.us.auth0.com",
-  audience: process.env.AUTH0_AUDIENCE || process.env.VITE_API_BASE_URL || "https://photo-vault-api",
+  audience: process.env.AUTH0_AUDIENCE || process.env.VITE_API_BASE_URL || "https://photovault-api.com",
 };
 
 // In Lambda environment, be more flexible with missing config during cold start
@@ -20,7 +20,7 @@ if (!authConfig.domain) {
 
 if (!authConfig.audience) {
   console.warn("⚠️  AUTH0_AUDIENCE not set, using default API identifier");
-  authConfig.audience = "https://photo-vault-api";
+  authConfig.audience = "https://photovault-api.com";
 }
 
 console.log('🔐 Auth0 Configuration:', {

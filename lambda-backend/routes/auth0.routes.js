@@ -5,6 +5,10 @@ const auth0_service_1 = require("../services/auth0.service");
 const auth_middleware_1 = require("../middleware/auth.middleware");
 const ensureUser_middleware_1 = require("../middleware/ensureUser.middleware");
 const router = (0, express_1.Router)();
+/**
+ * Auth0 token verification endpoint
+ * This endpoint accepts an Auth0 JWT token and syncs the user with MongoDB
+ */
 router.post('/verify', async (req, res) => {
     try {
         const { token } = req.body;
@@ -34,6 +38,9 @@ router.post('/verify', async (req, res) => {
         });
     }
 });
+/**
+ * Get current user profile (Auth0 protected)
+ */
 router.get('/profile', auth_middleware_1.checkJwt, ensureUser_middleware_1.ensureUserMiddleware, async (req, res) => {
     try {
         if (!req.user) {
@@ -55,6 +62,9 @@ router.get('/profile', auth_middleware_1.checkJwt, ensureUser_middleware_1.ensur
         });
     }
 });
+/**
+ * Sync Auth0 user data manually
+ */
 router.post('/sync', auth_middleware_1.checkJwt, ensureUser_middleware_1.ensureUserMiddleware, async (req, res) => {
     try {
         if (!req.user) {
@@ -63,6 +73,7 @@ router.post('/sync', auth_middleware_1.checkJwt, ensureUser_middleware_1.ensureU
                 message: 'User not authenticated',
             });
         }
+        // User is already synced by the middleware, just return the user data
         res.json({
             success: true,
             user: req.user,
@@ -74,6 +85,41 @@ router.post('/sync', auth_middleware_1.checkJwt, ensureUser_middleware_1.ensureU
         res.status(500).json({
             success: false,
             message: 'Internal server error',
+        });
+    }
+});
+/**
+ * Debug endpoint to inspect JWT token details
+ */
+router.post('/debug-token', async (req, res) => {
+    try {
+        const authHeader = req.headers.authorization;
+        if (!authHeader || !authHeader.startsWith('Bearer ')) {
+            return res.status(400).json({
+                success: false,
+                message: 'No Bearer token provided',
+            });
+        }
+        const token = authHeader.substring(7);
+        // Decode JWT payload (without verification for debug purposes)
+        const payload = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString());
+        res.json({
+            success: true,
+            tokenPayload: payload,
+            expectedAudience: process.env.AUTH0_AUDIENCE,
+            actualAudience: payload.aud,
+            audienceMatch: payload.aud === process.env.AUTH0_AUDIENCE,
+            issuer: payload.iss,
+            subject: payload.sub,
+            scopes: payload.scope
+        });
+    }
+    catch (error) {
+        console.error('Debug token error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to decode token',
+            error: error instanceof Error ? error.message : String(error)
         });
     }
 });

@@ -1,0 +1,74 @@
+{
+  "photovault-mcp-server": {
+    "name": "photovault-mcp-server",
+    "description": "Model Context Protocol server for PhotoVault photo management application - deploy, manage, and monitor your photo vault with AI assistance",
+    "repository": "https://github.com/AkhilSaiLatchireddi/photo-vault",
+    "directory": "mcp-server",
+    "author": "Akhil Sai Latchireddi",
+    "license": "MIT",
+    "homepage": "https://github.com/AkhilSaiLatchireddi/photo-vault/tree/main/mcp-server",
+    "categories": ["deployment", "infrastructure", "monitoring", "development-tools"],
+    "keywords": [
+      "photo-management", 
+      "aws", 
+      "serverless", 
+      "deployment", 
+      "s3", 
+      "lambda", 
+      "mongodb", 
+      "auth0", 
+      "github-pages", 
+      "ci-cd"
+    ],
+    "tools": [
+      {
+        "name": "deploy_backend",
+        "description": "Deploy PhotoVault backend to AWS Lambda using Serverless Framework"
+      },
+      {
+        "name": "deploy_frontend", 
+        "description": "Deploy PhotoVault frontend to GitHub Pages"
+      },
+      {
+        "name": "setup_aws_infrastructure",
+        "description": "Set up AWS infrastructure (S3, IAM, SSM) for PhotoVault"
+      },
+      {
+        "name": "configure_auth0",
+        "description": "Generate Auth0 configuration settings for PhotoVault"
+      },
+      {
+        "name": "run_tests",
+        "description": "Run frontend and backend tests with optional coverage reporting"
+      },
+      {
+        "name": "manage_secrets",
+        "description": "Manage AWS SSM Parameter Store secrets for PhotoVault"
+      },
+      {
+        "name": "check_deployment_status",
+        "description": "Check the status of PhotoVault deployments"
+      },
+      {
+        "name": "analyze_costs",
+        "description": "Analyze AWS costs and usage for PhotoVault infrastructure"
+      },
+      {
+        "name": "generate_feature_docs",
+        "description": "Generate documentation templates for new PhotoVault features"
+      },
+      {
+        "name": "backup_database",
+        "description": "Create backup instructions and scripts for MongoDB database"
+      }
+    ],
+    "runtime": {
+      "node": ">=18.0.0"
+    },
+    "dependencies": {
+      "aws-cli": "Required for AWS operations",
+      "git": "Required for GitHub deployments",  
+      "serverless": "Installed automatically during backend deployment"
+    }
+  }
+}

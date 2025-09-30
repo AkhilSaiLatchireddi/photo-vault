@@ -5,10 +5,14 @@ const client_s3_1 = require("@aws-sdk/client-s3");
 const s3_request_presigner_1 = require("@aws-sdk/s3-request-presigner");
 class S3Service {
     constructor() {
+        // Initialize S3 client with Lambda-compatible configuration
         const region = process.env.AWS_REGION || 'us-east-1';
+        // For Lambda, AWS credentials are automatically provided by the execution role
+        // For local development, use AWS credentials from environment or AWS profile
         const s3Config = {
             region: region
         };
+        // Only set credentials explicitly if running locally (not in Lambda)
         if (process.env.NODE_ENV !== 'production' && process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY) {
             s3Config.credentials = {
                 accessKeyId: process.env.AWS_ACCESS_KEY_ID,
@@ -16,6 +20,7 @@ class S3Service {
             };
         }
         this.s3Client = new client_s3_1.S3Client(s3Config);
+        // Get bucket name from environment (stored in AWS SSM Parameter Store for Lambda)
         this.bucketName = process.env.S3_BUCKET_NAME || 'photovault-bucket';
         console.log('🪣 S3 Service initialized:', {
             region: region,
@@ -23,6 +28,9 @@ class S3Service {
             environment: process.env.NODE_ENV || 'development'
         });
     }
+    /**
+     * List all objects in the S3 bucket
+     */
     async listObjects(prefix) {
         try {
             const command = new client_s3_1.ListObjectsV2Command({
@@ -47,6 +55,10 @@ class S3Service {
             throw new Error('Failed to list objects from S3');
         }
     }
+    /**
+     * Get a presigned URL for downloading an object
+     * For photos, use longer expiry times for better performance
+     */
     async getObjectUrl(key, expiresIn = 3600) {
         try {
             const command = new client_s3_1.GetObjectCommand({
@@ -67,6 +79,10 @@ class S3Service {
             throw new Error('Failed to generate download URL');
         }
     }
+    /**
+     * Get presigned URLs for multiple photos (batch operation)
+     * Optimized for photo galleries
+     */
     async getBatchObjectUrls(keys, expiresIn = 7200) {
         try {
             const urlPromises = keys.map(async (key) => {
@@ -95,9 +111,16 @@ class S3Service {
             throw new Error('Failed to generate batch download URLs');
         }
     }
+    /**
+     * Get public URL for photos (if bucket allows public read)
+     * Alternative to presigned URLs for better caching
+     */
     getPublicUrl(key) {
         return `https://${this.bucketName}.s3.${process.env.AWS_REGION || 'us-east-1'}.amazonaws.com/${key}`;
     }
+    /**
+     * Get a presigned URL for uploading an object
+     */
     async getUploadUrl(key, contentType, expiresIn = 3600) {
         try {
             const command = new client_s3_1.PutObjectCommand({
@@ -120,6 +143,9 @@ class S3Service {
             throw new Error('Failed to generate upload URL');
         }
     }
+    /**
+     * Delete an object from S3
+     */
     async deleteObject(key) {
         try {
             const command = new client_s3_1.DeleteObjectCommand({
@@ -137,6 +163,9 @@ class S3Service {
             throw new Error('Failed to delete object from S3');
         }
     }
+    /**
+     * Check if bucket is accessible
+     */
     async checkBucketAccess() {
         try {
             const command = new client_s3_1.ListObjectsV2Command({

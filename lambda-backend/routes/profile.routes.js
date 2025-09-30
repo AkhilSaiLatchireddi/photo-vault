@@ -7,6 +7,7 @@ const database_service_1 = require("../services/database.service");
 const express_validator_1 = require("express-validator");
 const ensureUser_1 = require("../utils/ensureUser");
 const router = (0, express_1.Router)();
+// Debug endpoint to see Auth0 payload
 router.get('/debug', auth_middleware_1.checkJwt, async (req, res) => {
     try {
         res.json({
@@ -23,6 +24,7 @@ router.get('/debug', auth_middleware_1.checkJwt, async (req, res) => {
         });
     }
 });
+// Test endpoint without database
 router.get('/test', auth_middleware_1.checkJwt, async (req, res) => {
     try {
         res.json({
@@ -40,9 +42,11 @@ router.get('/test', auth_middleware_1.checkJwt, async (req, res) => {
         });
     }
 });
+// Get user profile
 router.get('/', auth_middleware_1.checkJwt, ensureUser_middleware_1.ensureUserMiddleware, async (req, res) => {
     try {
         const user = await (0, ensureUser_1.ensureUserExists)(req);
+        // Return user profile without sensitive data
         const { password, ...userProfile } = user;
         res.json({
             success: true,
@@ -57,80 +61,81 @@ router.get('/', auth_middleware_1.checkJwt, ensureUser_middleware_1.ensureUserMi
         });
     }
 });
+// Update user profile
 router.put('/', auth_middleware_1.checkJwt, [
     (0, express_validator_1.body)('profile.firstName').optional({ values: 'falsy' }).custom((value) => {
         if (!value)
-            return true;
+            return true; // Allow undefined, null, empty string
         return typeof value === 'string' && value.length <= 50;
     }),
     (0, express_validator_1.body)('profile.lastName').optional({ values: 'falsy' }).custom((value) => {
         if (!value)
-            return true;
+            return true; // Allow undefined, null, empty string
         return typeof value === 'string' && value.length <= 50;
     }),
     (0, express_validator_1.body)('profile.displayName').optional({ values: 'falsy' }).custom((value) => {
         if (!value)
-            return true;
+            return true; // Allow undefined, null, empty string
         return typeof value === 'string' && value.length <= 100;
     }),
     (0, express_validator_1.body)('profile.bio').optional({ values: 'falsy' }).custom((value) => {
         if (!value)
-            return true;
+            return true; // Allow undefined, null, empty string
         return typeof value === 'string' && value.length <= 500;
     }),
     (0, express_validator_1.body)('profile.location').optional({ values: 'falsy' }).custom((value) => {
         if (!value)
-            return true;
+            return true; // Allow undefined, null, empty string
         return typeof value === 'string' && value.length <= 100;
     }),
     (0, express_validator_1.body)('profile.website').optional().custom((value) => {
         if (!value || value.trim() === '')
-            return true;
-        return /^https?:\/\/.+/.test(value);
+            return true; // Allow empty strings
+        return /^https?:\/\/.+/.test(value); // Basic URL validation
     }),
     (0, express_validator_1.body)('profile.phone').optional({ values: 'falsy' }).custom((value) => {
         if (!value || value.trim() === '')
-            return true;
-        return /[\d\-\+\(\)\s]+/.test(value);
+            return true; // Allow empty strings
+        return /[\d\-\+\(\)\s]+/.test(value); // Very lenient phone validation
     }),
     (0, express_validator_1.body)('profile.birthDate').optional({ values: 'falsy' }).custom((value) => {
         if (!value || value.trim() === '')
-            return true;
-        return !isNaN(Date.parse(value));
+            return true; // Allow empty strings
+        return !isNaN(Date.parse(value)); // Basic date validation
     }),
     (0, express_validator_1.body)('profile.occupation').optional({ values: 'falsy' }).custom((value) => {
         if (!value)
-            return true;
+            return true; // Allow undefined, null, empty string
         return typeof value === 'string' && value.length <= 100;
     }),
     (0, express_validator_1.body)('profile.interests').optional({ values: 'falsy' }).custom((value) => {
         if (!value)
-            return true;
+            return true; // Allow undefined, null, empty
         return Array.isArray(value);
     }),
     (0, express_validator_1.body)('profile.interests.*').optional({ values: 'falsy' }).custom((value) => {
         if (!value)
-            return true;
+            return true; // Allow undefined, null, empty string
         return typeof value === 'string';
     }),
     (0, express_validator_1.body)('profile.socialLinks.twitter').optional({ values: 'falsy' }).custom((value) => {
         if (!value)
-            return true;
+            return true; // Allow undefined, null, empty string
         return typeof value === 'string';
     }),
     (0, express_validator_1.body)('profile.socialLinks.instagram').optional({ values: 'falsy' }).custom((value) => {
         if (!value)
-            return true;
+            return true; // Allow undefined, null, empty string
         return typeof value === 'string';
     }),
     (0, express_validator_1.body)('profile.socialLinks.linkedin').optional({ values: 'falsy' }).custom((value) => {
         if (!value)
-            return true;
+            return true; // Allow undefined, null, empty string
         return typeof value === 'string';
     }),
     (0, express_validator_1.body)('profile.socialLinks.github').optional({ values: 'falsy' }).custom((value) => {
         if (!value)
-            return true;
+            return true; // Allow undefined, null, empty string
         return typeof value === 'string';
     }),
     (0, express_validator_1.body)('profile.preferences.theme').optional({ values: 'falsy' }).custom((value) => {
@@ -148,6 +153,7 @@ router.put('/', auth_middleware_1.checkJwt, [
     (0, express_validator_1.body)('profile.preferences.notifications.sharing').optional({ values: 'falsy' }).isBoolean(),
 ], async (req, res) => {
     try {
+        // Check for validation errors
         const errors = (0, express_validator_1.validationResult)(req);
         if (!errors.isEmpty()) {
             console.error('❌ Validation errors:', errors.array());
@@ -160,10 +166,12 @@ router.put('/', auth_middleware_1.checkJwt, [
         }
         const user = await (0, ensureUser_1.ensureUserExists)(req);
         const { profile } = req.body;
+        // Merge with existing profile data
         const existingProfile = user.profile || {};
         const updatedProfile = {
             ...existingProfile,
             ...profile,
+            // Handle nested objects properly
             socialLinks: {
                 ...existingProfile.socialLinks,
                 ...profile.socialLinks
@@ -177,7 +185,9 @@ router.put('/', auth_middleware_1.checkJwt, [
                 }
             }
         };
+        // Update user profile
         const updatedUser = await database_service_1.databaseService.updateUserProfile(user._id.toString(), updatedProfile);
+        // Return updated profile without sensitive data
         const { password, ...userProfile } = updatedUser;
         res.json({
             success: true,
@@ -193,11 +203,13 @@ router.put('/', auth_middleware_1.checkJwt, [
         });
     }
 });
+// Update specific profile field
 router.patch('/field/:fieldPath', auth_middleware_1.checkJwt, async (req, res) => {
     try {
         const user = await (0, ensureUser_1.ensureUserExists)(req);
         const { fieldPath } = req.params;
         const { value } = req.body;
+        // Validate allowed field paths
         const allowedFields = [
             'firstName', 'lastName', 'displayName', 'bio', 'location',
             'website', 'phone', 'birthDate', 'occupation', 'interests',
@@ -211,7 +223,9 @@ router.patch('/field/:fieldPath', auth_middleware_1.checkJwt, async (req, res) =
                 error: 'Invalid field path'
             });
         }
+        // Update specific field
         const updatedUser = await database_service_1.databaseService.updateUserProfileField(user._id.toString(), fieldPath, value);
+        // Return updated profile without sensitive data
         const { password, ...userProfile } = updatedUser;
         res.json({
             success: true,
@@ -227,6 +241,7 @@ router.patch('/field/:fieldPath', auth_middleware_1.checkJwt, async (req, res) =
         });
     }
 });
+// Get public profile (for sharing)
 router.get('/public/:userId', async (req, res) => {
     try {
         const { userId } = req.params;
@@ -237,12 +252,14 @@ router.get('/public/:userId', async (req, res) => {
                 error: 'User not found'
             });
         }
+        // Check privacy settings
         if (user.profile?.preferences?.privacy === 'private') {
             return res.status(403).json({
                 success: false,
                 error: 'Profile is private'
             });
         }
+        // Return only public profile information
         const publicProfile = {
             _id: user._id,
             username: user.username,

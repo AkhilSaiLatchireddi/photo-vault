@@ -20,6 +20,7 @@ class Auth0Service {
                 environment: process.env.NODE_ENV,
                 isLambda: !!process.env.AWS_LAMBDA_FUNCTION_NAME
             });
+            // Don't initialize client if missing required config
             if (!this.domain) {
                 return;
             }
@@ -30,13 +31,16 @@ class Auth0Service {
             timeout: 30000,
             cache: true,
             cacheMaxEntries: 5,
-            cacheMaxAge: 600000
+            cacheMaxAge: 600000 // 10 minutes
         });
         console.log('🔐 Auth0 Service initialized:', {
             domain: this.domain,
             audience: this.audience ? this.audience.substring(0, 50) + '...' : 'Not set'
         });
     }
+    /**
+     * Verify Auth0 JWT token
+     */
     async verifyToken(token) {
         try {
             if (!this.client) {
@@ -47,7 +51,9 @@ class Auth0Service {
             if (!decoded || !decoded.header || !decoded.header.kid) {
                 return null;
             }
+            // Get signing key
             const key = await this.getKey(decoded.header.kid);
+            // Verify token
             const payload = jsonwebtoken_1.default.verify(token, key, {
                 algorithms: ['RS256'],
                 audience: this.audience,
@@ -60,6 +66,9 @@ class Auth0Service {
             return null;
         }
     }
+    /**
+     * Get signing key from Auth0
+     */
     async getKey(kid) {
         if (!this.client) {
             throw new Error('Auth0 client not initialized');
@@ -79,10 +88,15 @@ class Auth0Service {
             });
         });
     }
+    /**
+     * Sync Auth0 user with MongoDB
+     */
     async syncUser(auth0User) {
         try {
+            // Check if user already exists in MongoDB
             let user = await database_service_1.databaseService.getUserByAuth0Id(auth0User.sub);
             if (!user) {
+                // Create new user in MongoDB
                 const username = auth0User.nickname || auth0User.name || auth0User.email.split('@')[0];
                 user = await database_service_1.databaseService.createAuth0User({
                     auth0Id: auth0User.sub,
@@ -94,6 +108,7 @@ class Auth0Service {
                 });
             }
             else {
+                // Update existing user with latest Auth0 data
                 user = await database_service_1.databaseService.updateAuth0User(user._id.toString(), {
                     email: auth0User.email,
                     name: auth0User.name,
@@ -116,6 +131,9 @@ class Auth0Service {
             throw error;
         }
     }
+    /**
+     * Get user by Auth0 ID
+     */
     async getUserByAuth0Id(auth0Id) {
         try {
             const user = await database_service_1.databaseService.getUserByAuth0Id(auth0Id);
@@ -137,6 +155,9 @@ class Auth0Service {
             return null;
         }
     }
+    /**
+     * Process Auth0 token and sync user
+     */
     async processAuth0Token(token) {
         try {
             const auth0User = await this.verifyToken(token);

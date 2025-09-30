@@ -58,6 +58,39 @@ export interface Photo {
   metadata?: object; // EXIF data as object instead of JSON string
 }
 
+export interface Album {
+  _id?: ObjectId;
+  user_id: ObjectId; // Album owner
+  title: string;
+  description?: string;
+  cover_photo_id?: ObjectId; // Reference to a photo for album cover
+  photo_ids: ObjectId[]; // Array of photo references (no duplication)
+  is_public: boolean; // Whether album can be accessed via public URL
+  public_token?: string; // Unique token for public access
+  public_expires_at?: Date; // Optional expiration for public access
+  shared_with: {
+    user_id?: ObjectId; // For registered users
+    email?: string; // For non-registered users
+    permission: 'view' | 'edit'; // Permission level
+    shared_at: Date;
+  }[];
+  created_at: Date;
+  updated_at: Date;
+}
+
+export interface AlbumShare {
+  _id?: ObjectId;
+  album_id: ObjectId;
+  shared_by: ObjectId; // User who shared
+  shared_with_email?: string; // Email for non-registered users
+  shared_with_user_id?: ObjectId; // User ID for registered users
+  permission: 'view' | 'edit';
+  expires_at?: Date; // Optional expiration
+  access_count: number; // Track how many times accessed
+  last_accessed_at?: Date;
+  created_at: Date;
+}
+
 class DatabaseService {
   private client: MongoClient | null = null;
   private db: Db | null = null;
@@ -113,6 +146,8 @@ class DatabaseService {
 
     const usersCollection = this.db.collection('users');
     const photosCollection = this.db.collection('photos');
+    const albumsCollection = this.db.collection('albums');
+    const albumSharesCollection = this.db.collection('album_shares');
 
     // Create indexes for users collection
     await usersCollection.createIndex({ email: 1 }, { unique: true });
@@ -124,6 +159,20 @@ class DatabaseService {
     await photosCollection.createIndex({ uploaded_at: -1 });
     await photosCollection.createIndex({ taken_at: -1 });
     await photosCollection.createIndex({ s3_key: 1 }, { unique: true });
+
+    // Create indexes for albums collection
+    await albumsCollection.createIndex({ user_id: 1 });
+    await albumsCollection.createIndex({ created_at: -1 });
+    await albumsCollection.createIndex({ public_token: 1 }, { unique: true, sparse: true });
+    await albumsCollection.createIndex({ is_public: 1 });
+    await albumsCollection.createIndex({ 'shared_with.user_id': 1 });
+    await albumsCollection.createIndex({ 'shared_with.email': 1 });
+
+    // Create indexes for album shares collection
+    await albumSharesCollection.createIndex({ album_id: 1 });
+    await albumSharesCollection.createIndex({ shared_with_user_id: 1 });
+    await albumSharesCollection.createIndex({ shared_with_email: 1 });
+    await albumSharesCollection.createIndex({ expires_at: 1 }, { sparse: true });
   }
 
   async getDatabase() {
@@ -141,6 +190,16 @@ class DatabaseService {
   private getPhotosCollection(): Collection<Photo> {
     if (!this.db) throw new Error('Database not initialized');
     return this.db.collection<Photo>('photos');
+  }
+
+  private getAlbumsCollection(): Collection<Album> {
+    if (!this.db) throw new Error('Database not initialized');
+    return this.db.collection<Album>('albums');
+  }
+
+  private getAlbumSharesCollection(): Collection<AlbumShare> {
+    if (!this.db) throw new Error('Database not initialized');
+    return this.db.collection<AlbumShare>('album_shares');
   }
 
   // User methods
@@ -437,6 +496,291 @@ class DatabaseService {
       first_upload: null,
       last_upload: null
     };
+  }
+
+  // Album methods
+  async createAlbum(albumData: Omit<Album, '_id' | 'created_at' | 'updated_at' | 'photo_ids' | 'shared_with'>): Promise<Album> {
+    await this.getDatabase();
+    const albumsCollection = this.getAlbumsCollection();
+    
+    const now = new Date();
+    const albumDocument: Omit<Album, '_id'> = {
+      ...albumData,
+      photo_ids: [],
+      shared_with: [],
+      created_at: now,
+      updated_at: now
+    };
+
+    const result = await albumsCollection.insertOne(albumDocument);
+    const album = await albumsCollection.findOne({ _id: result.insertedId });
+    
+    if (!album) throw new Error('Failed to create album');
+    return album;
+  }
+
+  async getUserAlbums(userId: string | ObjectId): Promise<Album[]> {
+    await this.getDatabase();
+    const albumsCollection = this.getAlbumsCollection();
+    const objectId = typeof userId === 'string' ? new ObjectId(userId) : userId;
+    
+    return await albumsCollection
+      .find({ user_id: objectId })
+      .sort({ created_at: -1 })
+      .toArray();
+  }
+
+  async getSharedAlbums(userId: string | ObjectId, email?: string): Promise<Album[]> {
+    await this.getDatabase();
+    const albumsCollection = this.getAlbumsCollection();
+    const objectId = typeof userId === 'string' ? new ObjectId(userId) : userId;
+    
+    const query: any = {
+      $or: [
+        { 'shared_with.user_id': objectId }
+      ]
+    };
+    
+    if (email) {
+      query.$or.push({ 'shared_with.email': email });
+    }
+    
+    return await albumsCollection.find(query).sort({ created_at: -1 }).toArray();
+  }
+
+  async getAlbumById(albumId: string | ObjectId, userId?: string | ObjectId): Promise<Album | null> {
+    await this.getDatabase();
+    const albumsCollection = this.getAlbumsCollection();
+    const albumObjectId = typeof albumId === 'string' ? new ObjectId(albumId) : albumId;
+    
+    const query: any = { _id: albumObjectId };
+    
+    // If userId provided, ensure user has access (owner or shared with)
+    if (userId) {
+      const userObjectId = typeof userId === 'string' ? new ObjectId(userId) : userId;
+      query.$or = [
+        { user_id: userObjectId }, // Owner
+        { 'shared_with.user_id': userObjectId }, // Shared with user
+        { is_public: true } // Public album
+      ];
+    }
+    
+    return await albumsCollection.findOne(query);
+  }
+
+  async getAlbumByToken(publicToken: string): Promise<Album | null> {
+    await this.getDatabase();
+    const albumsCollection = this.getAlbumsCollection();
+    
+    return await albumsCollection.findOne({
+      public_token: publicToken,
+      is_public: true,
+      $or: [
+        { public_expires_at: { $exists: false } },
+        { public_expires_at: { $eq: undefined } },
+        { public_expires_at: { $gt: new Date() } }
+      ]
+    });
+  }
+
+  async updateAlbum(albumId: string | ObjectId, userId: string | ObjectId, updateData: Partial<Omit<Album, '_id' | 'user_id' | 'created_at'>>): Promise<Album | null> {
+    await this.getDatabase();
+    const albumsCollection = this.getAlbumsCollection();
+    const albumObjectId = typeof albumId === 'string' ? new ObjectId(albumId) : albumId;
+    const userObjectId = typeof userId === 'string' ? new ObjectId(userId) : userId;
+    
+    const result = await albumsCollection.findOneAndUpdate(
+      { _id: albumObjectId, user_id: userObjectId }, // Only owner can update
+      { 
+        $set: { 
+          ...updateData,
+          updated_at: new Date() 
+        } 
+      },
+      { returnDocument: 'after' }
+    );
+    
+    return result;
+  }
+
+  async deleteAlbum(albumId: string | ObjectId, userId: string | ObjectId): Promise<boolean> {
+    await this.getDatabase();
+    const albumsCollection = this.getAlbumsCollection();
+    const albumObjectId = typeof albumId === 'string' ? new ObjectId(albumId) : albumId;
+    const userObjectId = typeof userId === 'string' ? new ObjectId(userId) : userId;
+    
+    const result = await albumsCollection.deleteOne({
+      _id: albumObjectId,
+      user_id: userObjectId
+    });
+    
+    return result.deletedCount > 0;
+  }
+
+  async addPhotoToAlbum(albumId: string | ObjectId, photoId: string | ObjectId, userId: string | ObjectId): Promise<boolean> {
+    await this.getDatabase();
+    const albumsCollection = this.getAlbumsCollection();
+    const albumObjectId = typeof albumId === 'string' ? new ObjectId(albumId) : albumId;
+    const photoObjectId = typeof photoId === 'string' ? new ObjectId(photoId) : photoId;
+    const userObjectId = typeof userId === 'string' ? new ObjectId(userId) : userId;
+    
+    // Verify user owns the album
+    const album = await albumsCollection.findOne({ _id: albumObjectId, user_id: userObjectId });
+    if (!album) return false;
+    
+    // Verify photo exists and user owns it
+    const photo = await this.getPhotoById(photoObjectId, userObjectId);
+    if (!photo) return false;
+    
+    // Add photo to album if not already present
+    const result = await albumsCollection.updateOne(
+      { _id: albumObjectId, photo_ids: { $ne: photoObjectId } },
+      { 
+        $push: { photo_ids: photoObjectId },
+        $set: { updated_at: new Date() }
+      }
+    );
+    
+    return result.modifiedCount > 0;
+  }
+
+  async removePhotoFromAlbum(albumId: string | ObjectId, photoId: string | ObjectId, userId: string | ObjectId): Promise<boolean> {
+    await this.getDatabase();
+    const albumsCollection = this.getAlbumsCollection();
+    const albumObjectId = typeof albumId === 'string' ? new ObjectId(albumId) : albumId;
+    const photoObjectId = typeof photoId === 'string' ? new ObjectId(photoId) : photoId;
+    const userObjectId = typeof userId === 'string' ? new ObjectId(userId) : userId;
+    
+    const result = await albumsCollection.updateOne(
+      { _id: albumObjectId, user_id: userObjectId },
+      { 
+        $pull: { photo_ids: photoObjectId },
+        $set: { updated_at: new Date() }
+      }
+    );
+    
+    return result.modifiedCount > 0;
+  }
+
+  async getAlbumPhotos(albumId: string | ObjectId, userId?: string | ObjectId): Promise<Photo[]> {
+    await this.getDatabase();
+    const albumsCollection = this.getAlbumsCollection();
+    const photosCollection = this.getPhotosCollection();
+    const albumObjectId = typeof albumId === 'string' ? new ObjectId(albumId) : albumId;
+    
+    // Get album and verify access
+    const album = await this.getAlbumById(albumObjectId, userId);
+    if (!album) return [];
+    
+    // Get all photos for this album
+    return await photosCollection
+      .find({ _id: { $in: album.photo_ids } })
+      .sort({ uploaded_at: -1 })
+      .toArray();
+  }
+
+  async shareAlbum(albumId: string | ObjectId, ownerId: string | ObjectId, shareData: {
+    email?: string;
+    username?: string;
+    permission: 'view' | 'edit';
+    expires_at?: Date;
+  }): Promise<boolean> {
+    await this.getDatabase();
+    const albumsCollection = this.getAlbumsCollection();
+    const usersCollection = this.getUsersCollection();
+    const albumObjectId = typeof albumId === 'string' ? new ObjectId(albumId) : albumId;
+    const ownerObjectId = typeof ownerId === 'string' ? new ObjectId(ownerId) : ownerId;
+    
+    // Verify album ownership
+    const album = await albumsCollection.findOne({ _id: albumObjectId, user_id: ownerObjectId });
+    if (!album) return false;
+    
+    let shareWith: { user_id?: ObjectId; email?: string; permission: 'view' | 'edit'; shared_at: Date } = {
+      permission: shareData.permission,
+      shared_at: new Date()
+    };
+    
+    if (shareData.username) {
+      // Find user by username
+      const user = await usersCollection.findOne({ username: shareData.username });
+      if (user) {
+        shareWith.user_id = user._id;
+      } else {
+        return false; // User not found
+      }
+    } else if (shareData.email) {
+      // Check if user exists with this email
+      const user = await usersCollection.findOne({ email: shareData.email });
+      if (user) {
+        shareWith.user_id = user._id;
+      } else {
+        shareWith.email = shareData.email; // Share with email for future registration
+      }
+    }
+    
+    // Add to shared_with array if not already shared
+    const result = await albumsCollection.updateOne(
+      { 
+        _id: albumObjectId,
+        $nor: [
+          { 'shared_with.user_id': shareWith.user_id },
+          { 'shared_with.email': shareWith.email }
+        ]
+      },
+      { 
+        $push: { shared_with: shareWith },
+        $set: { updated_at: new Date() }
+      }
+    );
+    
+    return result.modifiedCount > 0;
+  }
+
+  async generatePublicToken(albumId: string | ObjectId, userId: string | ObjectId, expiresAt?: Date): Promise<string | null> {
+    await this.getDatabase();
+    const albumsCollection = this.getAlbumsCollection();
+    const albumObjectId = typeof albumId === 'string' ? new ObjectId(albumId) : albumId;
+    const userObjectId = typeof userId === 'string' ? new ObjectId(userId) : userId;
+    
+    const crypto = await import('crypto');
+    const publicToken = crypto.randomBytes(32).toString('hex');
+    
+    const result = await albumsCollection.updateOne(
+      { _id: albumObjectId, user_id: userObjectId },
+      { 
+        $set: { 
+          is_public: true,
+          public_token: publicToken,
+          public_expires_at: expiresAt,
+          updated_at: new Date()
+        } 
+      }
+    );
+    
+    return result.modifiedCount > 0 ? publicToken : null;
+  }
+
+  async revokePublicAccess(albumId: string | ObjectId, userId: string | ObjectId): Promise<boolean> {
+    await this.getDatabase();
+    const albumsCollection = this.getAlbumsCollection();
+    const albumObjectId = typeof albumId === 'string' ? new ObjectId(albumId) : albumId;
+    const userObjectId = typeof userId === 'string' ? new ObjectId(userId) : userId;
+    
+    const result = await albumsCollection.updateOne(
+      { _id: albumObjectId, user_id: userObjectId },
+      { 
+        $set: { 
+          is_public: false,
+          updated_at: new Date()
+        },
+        $unset: { 
+          public_token: "",
+          public_expires_at: ""
+        }
+      }
+    );
+    
+    return result.modifiedCount > 0;
   }
 
   async close() {
