@@ -37,12 +37,13 @@ class PhotoService {
     console.log('[Cache MISS] Fetching photos from API');
     const response = await fetch(`${this.apiBaseUrl}/api/files`, {
       method: 'GET',
-      credentials: 'include', // Keep only essential CORS setting
+      credentials: 'include',
       headers: {
         'Authorization': `Bearer ${await this.getToken()}`,
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
+        'X-Requested-With': 'XMLHttpRequest'
       },
-      mode: 'cors' // Keep only essential CORS setting
+      mode: 'cors'
     });
 
     if (!response.ok) {
@@ -92,12 +93,13 @@ class PhotoService {
   async refreshUrls(photoIds: string[]) {
     const response = await fetch(`${this.apiBaseUrl}/api/files/refresh-urls`, {
       method: 'POST',
-      credentials: 'include', // Keep only essential CORS setting
+      credentials: 'include',
       headers: {
         'Authorization': `Bearer ${await this.getToken()}`,
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
+        'X-Requested-With': 'XMLHttpRequest'
       },
-      mode: 'cors', // Keep only essential CORS setting
+      mode: 'cors',
       body: JSON.stringify({ photoIds })
     });
 
@@ -169,12 +171,13 @@ class PhotoService {
       // Include credentials mode to ensure cookies are sent (if applicable)
       const response = await fetch(`${this.apiBaseUrl}/api/albums`, {
         method: 'GET',
-        credentials: 'include', // Keep only essential CORS setting
+        credentials: 'include',
         headers: {
           'Authorization': `Bearer ${token || ''}`,
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'X-Requested-With': 'XMLHttpRequest'
         },
-        mode: 'cors' // Keep only essential CORS setting
+        mode: 'cors'
       });
       
       console.log(`Albums response status: ${response.status} ${response.statusText}`);
@@ -204,12 +207,13 @@ class PhotoService {
   async createAlbum(albumData: { title: string; description?: string }) {
     const response = await fetch(`${this.apiBaseUrl}/api/albums`, {
       method: 'POST',
-      credentials: 'include', // Keep only essential CORS setting
+      credentials: 'include',
       headers: {
         'Authorization': `Bearer ${await this.getToken()}`,
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
+        'X-Requested-With': 'XMLHttpRequest'
       },
-      mode: 'cors', // Keep only essential CORS setting
+      mode: 'cors',
       body: JSON.stringify(albumData)
     });
 
@@ -262,12 +266,13 @@ class PhotoService {
       // Make the request with improved error handling and timeout
       const fetchPromise = fetch(`${this.apiBaseUrl}/api/albums/${albumId}`, {
         method: 'GET',
-        credentials: 'include', // Keep only essential CORS setting
+        credentials: 'include',
         headers: {
           'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'X-Requested-With': 'XMLHttpRequest'
         },
-        mode: 'cors' // Keep only essential CORS setting
+        mode: 'cors'
       });
       
       // Race between the fetch and the timeout
@@ -335,12 +340,13 @@ class PhotoService {
   async updateAlbum(albumId: string, updateData: { title?: string; description?: string; cover_photo_id?: string }) {
     const response = await fetch(`${this.apiBaseUrl}/api/albums/${albumId}`, {
       method: 'PUT',
-      credentials: 'include', // Keep only essential CORS setting
+      credentials: 'include',
       headers: {
         'Authorization': `Bearer ${await this.getToken()}`,
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
+        'X-Requested-With': 'XMLHttpRequest'
       },
-      mode: 'cors', // Keep only essential CORS setting
+      mode: 'cors',
       body: JSON.stringify(updateData)
     });
 
@@ -365,12 +371,13 @@ class PhotoService {
   async deleteAlbum(albumId: string) {
     const response = await fetch(`${this.apiBaseUrl}/api/albums/${albumId}`, {
       method: 'DELETE',
-      credentials: 'include', // Keep only essential CORS setting
+      credentials: 'include',
       headers: {
         'Authorization': `Bearer ${await this.getToken()}`,
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
+        'X-Requested-With': 'XMLHttpRequest'
       },
-      mode: 'cors' // Keep only essential CORS setting
+      mode: 'cors'
     });
 
     if (!response.ok) {
@@ -394,12 +401,13 @@ class PhotoService {
   async addPhotosToAlbum(albumId: string, photoIds: string[]) {
     const response = await fetch(`${this.apiBaseUrl}/api/albums/${albumId}/photos`, {
       method: 'POST',
-      credentials: 'include', // Include credentials for CORS requests
+      credentials: 'include',
       headers: {
         'Authorization': `Bearer ${await this.getToken()}`,
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
+        'X-Requested-With': 'XMLHttpRequest'
       },
-      mode: 'cors', // Explicitly set CORS mode
+      mode: 'cors',
       body: JSON.stringify({ photo_ids: photoIds })
     });
 
@@ -423,12 +431,13 @@ class PhotoService {
   async removePhotoFromAlbum(albumId: string, photoId: string) {
     const response = await fetch(`${this.apiBaseUrl}/api/albums/${albumId}/photos/${photoId}`, {
       method: 'DELETE',
-      credentials: 'include', // Keep only essential CORS setting
+      credentials: 'include',
       headers: {
         'Authorization': `Bearer ${await this.getToken()}`,
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
+        'X-Requested-With': 'XMLHttpRequest'
       },
-      mode: 'cors' // Keep only essential CORS setting
+      mode: 'cors'
     });
 
     if (!response.ok) {
@@ -456,12 +465,13 @@ class PhotoService {
   }) {
     const response = await fetch(`${this.apiBaseUrl}/api/albums/${albumId}/share`, {
       method: 'POST',
-      credentials: 'include', // Keep only essential CORS setting
+      credentials: 'include',
       headers: {
         'Authorization': `Bearer ${await this.getToken()}`,
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
+        'X-Requested-With': 'XMLHttpRequest'
       },
-      mode: 'cors', // Keep only essential CORS setting
+      mode: 'cors',
       body: JSON.stringify(shareData)
     });
 
@@ -481,12 +491,13 @@ class PhotoService {
   async generatePublicLink(albumId: string, expiresAt?: string) {
     const response = await fetch(`${this.apiBaseUrl}/api/albums/${albumId}/public`, {
       method: 'POST',
-      credentials: 'include', // Keep only essential CORS setting
+      credentials: 'include',
       headers: {
         'Authorization': `Bearer ${await this.getToken()}`,
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
+        'X-Requested-With': 'XMLHttpRequest'
       },
-      mode: 'cors', // Keep only essential CORS setting
+      mode: 'cors',
       body: JSON.stringify({ expires_at: expiresAt })
     });
 
@@ -506,12 +517,13 @@ class PhotoService {
   async revokePublicLink(albumId: string) {
     const response = await fetch(`${this.apiBaseUrl}/api/albums/${albumId}/public`, {
       method: 'DELETE',
-      credentials: 'include', // Keep only essential CORS setting
+      credentials: 'include',
       headers: {
         'Authorization': `Bearer ${await this.getToken()}`,
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
+        'X-Requested-With': 'XMLHttpRequest'
       },
-      mode: 'cors' // Keep only essential CORS setting
+      mode: 'cors'
     });
 
     if (!response.ok) {
