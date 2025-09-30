@@ -10,6 +10,16 @@ const router = (0, express_1.Router)();
 // Apply authentication middleware to all routes
 router.use(auth_middleware_1.checkJwt);
 router.use(ensureUser_middleware_1.ensureUserMiddleware);
+// Middleware to ensure CORS headers are consistently set
+router.use((req, res, next) => {
+    // Ensure CORS headers are set for all album responses
+    res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
+    res.header('Access-Control-Allow-Credentials', 'true');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+    res.header('Access-Control-Expose-Headers', 'Content-Range, X-Content-Range');
+    next();
+});
 /**
  * GET /api/albums
  * Get user's albums
