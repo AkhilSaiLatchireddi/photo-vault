@@ -52,6 +52,7 @@ functions:
     handler: dist/lambda.handler
     timeout: 30
     memorySize: 256
+    provisionedConcurrency: 1
     events:
       - http:
           path: /{proxy+}
@@ -68,7 +69,15 @@ functions:
               - X-Amz-Security-Token
               - X-Amz-User-Agent
               - X-Requested-With
+              - X-Content-Range
+              - Content-Range
             allowCredentials: true
+            methods:
+              - GET
+              - POST
+              - PUT
+              - DELETE
+              - OPTIONS
       - http:
           path: /
           method: ANY
@@ -84,7 +93,15 @@ functions:
               - X-Amz-Security-Token
               - X-Amz-User-Agent
               - X-Requested-With
+              - X-Content-Range
+              - Content-Range
             allowCredentials: true
+            methods:
+              - GET
+              - POST
+              - PUT
+              - DELETE
+              - OPTIONS
 
 plugins:
   - serverless-plugin-typescript

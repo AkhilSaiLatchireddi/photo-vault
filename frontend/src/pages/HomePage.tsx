@@ -3,6 +3,7 @@ import { useAuth0 } from '@auth0/auth0-react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Camera, Upload, Download, Trash2, Image, AlertCircle, BarChart, User } from 'lucide-react';
 import { config } from '../config/env';
+import { photoService } from '../services/photoService';
 import PhotoZoomViewer from '../components/PhotoZoomViewer';
 import Layout from '../components/layout/Layout';
 
@@ -185,6 +186,8 @@ export default function HomePage() {
       }
 
       // Refresh photos and stats
+      // Clear photos cache to force fresh data after upload
+      photoService.invalidatePhotosCache();
       await Promise.all([fetchPhotos(), fetchStats()]);
       
       // Reset file input

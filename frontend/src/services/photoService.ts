@@ -1,10 +1,18 @@
 // Frontend photo service with caching
 import { config } from '../config/env';
+import { cacheService } from '../utils/cache';
 
 class PhotoService {
   private urlCache = new Map<string, { url: string; expires: number }>();
   private apiBaseUrl = config.API_BASE_URL || import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
   private getTokenFunction: (() => Promise<string | null>) | null = null;
+  
+  // Cache TTL configurations (in milliseconds)
+  private readonly CACHE_TTL = {
+    PHOTOS: 5 * 60 * 1000,      // 5 minutes for photos list
+    ALBUMS: 2 * 60 * 1000,      // 2 minutes for albums list
+    ALBUM_DETAIL: 3 * 60 * 1000 // 3 minutes for album details
+  };
 
   // Initialize with Auth0 token getter
   initialize(getTokenFunction: () => Promise<string | null>) {
@@ -12,6 +20,21 @@ class PhotoService {
   }
 
   async getPhotos(useCache = true) {
+    const cacheKey = 'photos-list';
+    
+    // Try cache first if enabled
+    if (useCache) {
+      const cached = cacheService.get<any>(cacheKey);
+      if (cached) {
+        console.log('[Cache HIT] Photos list from cache');
+        return {
+          success: true,
+          data: cached
+        };
+      }
+    }
+    
+    console.log('[Cache MISS] Fetching photos from API');
     const response = await fetch(`${this.apiBaseUrl}/api/files`, {
       method: 'GET',
       credentials: 'include', // Keep only essential CORS setting
@@ -40,6 +63,9 @@ class PhotoService {
           });
         }
       });
+      
+      // Cache the entire response
+      cacheService.set(cacheKey, data.data, { ttl: this.CACHE_TTL.PHOTOS });
     }
 
     // Return in a standardized format to match other API responses
@@ -118,7 +144,20 @@ class PhotoService {
 
   // Album methods
   async getAlbums() {
+    const cacheKey = 'albums-list';
+    
+    // Try cache first
+    const cached = cacheService.get<any>(cacheKey);
+    if (cached) {
+      console.log('[Cache HIT] Albums list from cache');
+      return {
+        success: true,
+        data: cached
+      };
+    }
+    
     try {
+      console.log('[Cache MISS] Fetching albums from API');
       console.log(`Fetching albums from: ${this.apiBaseUrl}/api/albums`);
       
       // Get the auth token
@@ -146,10 +185,14 @@ class PhotoService {
 
       const data = await response.json();
       
+      // Cache the result
+      const albumsData = data.data || data;
+      cacheService.set(cacheKey, albumsData, { ttl: this.CACHE_TTL.ALBUMS });
+      
       // Return in a standardized format to match other API responses
       return {
         success: true,
-        data: data.data || data
+        data: albumsData
       };
       
     } catch (err) {
@@ -176,6 +219,10 @@ class PhotoService {
 
     const data = await response.json();
     
+    // Invalidate albums list cache
+    cacheService.invalidate('albums-list');
+    console.log('[Cache INVALIDATE] Albums list after create');
+    
     // Return in a standardized format to match other API responses
     return {
       success: true,
@@ -184,9 +231,21 @@ class PhotoService {
   }
 
   async getAlbum(albumId: string) {
+    const cacheKey = `album-detail-${albumId}`;
+    
+    // Try cache first
+    const cached = cacheService.get<any>(cacheKey);
+    if (cached) {
+      console.log(`[Cache HIT] Album ${albumId} from cache`);
+      return {
+        success: true,
+        data: cached
+      };
+    }
+    
     try {
       // Log attempt to fetch album
-      console.log(`Attempting to fetch album: ${albumId}`);
+      console.log(`[Cache MISS] Fetching album from API: ${albumId}`);
       
       // Get the auth token
       const token = await this.getToken();
@@ -257,10 +316,14 @@ class PhotoService {
       // Log successful data retrieval
       console.log(`Successfully fetched album with ${data.data?.photos?.length || 0} photos`);
       
+      // Cache the result
+      const albumData = data.data || data;
+      cacheService.set(cacheKey, albumData, { ttl: this.CACHE_TTL.ALBUM_DETAIL });
+      
       // Return in a standardized format to match other API responses
       return {
         success: true,
-        data: data.data || data
+        data: albumData
       };
     } catch (err) {
       // Log and rethrow the error
@@ -287,6 +350,11 @@ class PhotoService {
 
     const data = await response.json();
     
+    // Invalidate related caches
+    cacheService.invalidate('albums-list');
+    cacheService.invalidate(`album-detail-${albumId}`);
+    console.log(`[Cache INVALIDATE] Albums list and album ${albumId} after update`);
+    
     // Return in a standardized format to match other API responses
     return {
       success: true,
@@ -310,6 +378,11 @@ class PhotoService {
     }
 
     const data = await response.json();
+    
+    // Invalidate related caches
+    cacheService.invalidate('albums-list');
+    cacheService.invalidate(`album-detail-${albumId}`);
+    console.log(`[Cache INVALIDATE] Albums list and album ${albumId} after delete`);
     
     // Return in a standardized format to match other API responses
     return {
@@ -336,6 +409,10 @@ class PhotoService {
 
     const data = await response.json();
     
+    // Invalidate album detail cache as photos changed
+    cacheService.invalidate(`album-detail-${albumId}`);
+    console.log(`[Cache INVALIDATE] Album ${albumId} after adding photos`);
+    
     // Return in a standardized format to match other API responses
     return {
       success: true,
@@ -359,6 +436,10 @@ class PhotoService {
     }
 
     const data = await response.json();
+    
+    // Invalidate album detail cache as photos changed
+    cacheService.invalidate(`album-detail-${albumId}`);
+    console.log(`[Cache INVALIDATE] Album ${albumId} after removing photo`);
     
     // Return in a standardized format to match other API responses
     return {
@@ -468,6 +549,41 @@ class PhotoService {
       success: true,
       data: data.data || data
     };
+  }
+  
+  // Cache management methods
+  
+  /**
+   * Clear all caches (useful after logout or manual refresh)
+   */
+  clearAllCaches(): void {
+    cacheService.clear();
+    this.urlCache.clear();
+    console.log('[Cache] Cleared all caches');
+  }
+  
+  /**
+   * Invalidate photos list cache (call after uploading new photos)
+   */
+  invalidatePhotosCache(): void {
+    cacheService.invalidate('photos-list');
+    console.log('[Cache INVALIDATE] Photos list');
+  }
+  
+  /**
+   * Invalidate albums list cache
+   */
+  invalidateAlbumsCache(): void {
+    cacheService.invalidate('albums-list');
+    console.log('[Cache INVALIDATE] Albums list');
+  }
+  
+  /**
+   * Invalidate specific album detail cache
+   */
+  invalidateAlbumCache(albumId: string): void {
+    cacheService.invalidate(`album-detail-${albumId}`);
+    console.log(`[Cache INVALIDATE] Album ${albumId}`);
   }
 }
 

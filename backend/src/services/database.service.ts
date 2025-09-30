@@ -113,32 +113,52 @@ class DatabaseService {
   }
 
   async initialize() {
-    if (this.db) return this.db;
+    if (this.db) {
+      console.log('♻️  Reusing existing database connection');
+      return this.db;
+    }
 
     try {
+      console.log('🔌 Creating new MongoDB connection...');
       this.client = new MongoClient(this.uri, {
         serverApi: {
           version: ServerApiVersion.v1,
           strict: true,
           deprecationErrors: true,
         },
-        connectTimeoutMS: 30000,
-        serverSelectionTimeoutMS: 30000,
+        // Optimized settings for Lambda
+        connectTimeoutMS: 5000, // Faster timeout (5s instead of 30s)
+        serverSelectionTimeoutMS: 5000, // Faster timeout
+        socketTimeoutMS: 45000, // Socket timeout
+        maxPoolSize: 10, // Limit pool size for Lambda
+        minPoolSize: 1, // Keep at least 1 connection warm
+        maxIdleTimeMS: 60000, // Close idle connections after 60s
+        retryWrites: true,
+        retryReads: true,
         tls: true,
       });
 
       await this.client.connect();
       this.db = this.client.db('photovault');
 
-      await this.createIndexes();
+      // Create indexes in background (don't await)
+      this.createIndexes().catch(err => {
+        console.error('⚠️  Failed to create indexes:', err);
+      });
       
+      console.log('✅ MongoDB connection established');
       return this.db;
     } catch (error) {
       console.error('❌ MongoDB connection failed:', error instanceof Error ? error.message : error);
-      
-      // Return a mock database object to prevent crashes
-      return null;
+      // Reset so next attempt can retry
+      this.client = null;
+      this.db = null;
+      throw error;
     }
+  }
+
+  isInitialized(): boolean {
+    return this.db !== null && this.client !== null;
   }
 
   private async createIndexes() {

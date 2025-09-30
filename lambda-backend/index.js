@@ -35,7 +35,11 @@ else {
 }
 const app = (0, express_1.default)();
 const PORT = process.env.PORT || 3001;
-debugLog('Express app created', { port: PORT });
+// Trust proxy for AWS API Gateway / Lambda
+// Set to 1 to trust the first proxy (API Gateway)
+// This is more secure than 'true' which trusts all proxies
+app.set('trust proxy', 1);
+debugLog('Express app created', { port: PORT, trustProxy: 1 });
 // Determine CORS origins based on environment
 const getAllowedOrigins = () => {
     debugLog('Calculating allowed CORS origins');
@@ -77,6 +81,22 @@ const limiter = (0, express_rate_limit_1.default)({
     message: 'Too many requests from this IP, please try again later.',
     standardHeaders: true,
     legacyHeaders: false,
+    // Custom key generator that properly handles proxied requests
+    keyGenerator: (req) => {
+        // In Lambda/API Gateway, the real IP is in X-Forwarded-For header
+        const forwarded = req.headers['x-forwarded-for'];
+        if (forwarded && typeof forwarded === 'string') {
+            // Get the first IP in the chain (the client's real IP)
+            return forwarded.split(',')[0].trim();
+        }
+        // Fallback to req.ip (which Express sets based on trust proxy)
+        return req.ip || 'unknown';
+    },
+    // Skip rate limiting for certain conditions if needed
+    skip: (req) => {
+        // Skip rate limiting for health checks
+        return req.path === '/health';
+    },
 });
 app.use('/api', limiter);
 // CORS configuration
@@ -86,9 +106,13 @@ const corsOptions = {
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
-    exposedHeaders: ['Content-Range', 'X-Content-Range']
+    exposedHeaders: ['Content-Range', 'X-Content-Range'],
+    preflightContinue: false,
+    optionsSuccessStatus: 204
 };
 app.use((0, cors_1.default)(corsOptions));
+// Explicit OPTIONS handler for preflight requests
+app.options('*', (0, cors_1.default)(corsOptions));
 // Body parsing middleware
 debugLog('Configuring body parsing middleware');
 app.use(express_1.default.json({ limit: '10mb' }));
@@ -115,7 +139,8 @@ app.get('/health', (req, res) => {
         timestamp: new Date().toISOString(),
         version: '1.0.0',
         environment: process.env.NODE_ENV || 'development',
-        region: process.env.AWS_REGION || 'us-east-1'
+        region: process.env.AWS_REGION || 'us-east-1',
+        database: isDbInitialized ? 'connected' : 'initializing'
     });
 });
 // Public API endpoint for testing (similar to Auth0 sample)
@@ -157,24 +182,68 @@ app.use((err, req, res, next) => {
         ...(process.env.NODE_ENV !== 'production' && { stack: err.stack }),
     });
 });
-// Database initialization and server startup
-async function initializeApp() {
-    debugLog('Starting application initialization');
-    try {
-        // Initialize database connection
-        debugLog('Initializing database connection');
+// Database initialization - happens once per Lambda container
+let dbInitPromise = null;
+let isDbInitialized = false;
+async function initializeDatabase() {
+    if (isDbInitialized) {
+        debugLog('Database already initialized - reusing connection');
+        return;
+    }
+    if (!dbInitPromise) {
+        debugLog('Starting database initialization');
         console.log('🔌 Initializing database connection...');
-        await database_service_1.databaseService.initialize();
-        debugLog('Database connection established successfully');
-        console.log('✅ Database connection established');
-        // In Lambda, we don't start a server - the handler takes care of requests
-        if (process.env.AWS_LAMBDA_FUNCTION_NAME) {
-            debugLog('Lambda environment detected - API ready');
-            console.log('🚀 PhotoVault API initialized for Lambda');
-        }
-        else {
-            debugLog('Local development environment - starting server');
-            // Start server for local development
+        dbInitPromise = database_service_1.databaseService.initialize()
+            .then(() => {
+            isDbInitialized = true;
+            debugLog('Database connection established successfully');
+            console.log('✅ Database connection established');
+        })
+            .catch((error) => {
+            // Reset promise so next request can retry
+            dbInitPromise = null;
+            debugLog('Database initialization failed', { error: error instanceof Error ? error.message : String(error) });
+            console.error('❌ Failed to initialize database:', error);
+            throw error;
+        });
+    }
+    return dbInitPromise;
+}
+// Middleware to ensure DB is ready before processing requests
+app.use(async (req, res, next) => {
+    // Skip DB check for health endpoint
+    if (req.path === '/health') {
+        return next();
+    }
+    try {
+        await initializeDatabase();
+        next();
+    }
+    catch (error) {
+        debugLog('Database not ready for request', { path: req.path });
+        res.status(503).json({
+            error: 'Service Unavailable',
+            message: 'Database connection not ready. Please try again.',
+        });
+    }
+});
+// Server startup for local development
+async function startServer() {
+    debugLog('Starting application');
+    // In Lambda, initialization happens on first request via middleware
+    if (process.env.AWS_LAMBDA_FUNCTION_NAME) {
+        debugLog('Lambda environment detected - DB will initialize on first request');
+        console.log('🚀 PhotoVault API ready for Lambda');
+        // Start DB initialization in background for provisioned concurrency
+        initializeDatabase().catch(err => {
+            console.error('Background DB initialization failed:', err);
+        });
+    }
+    else {
+        debugLog('Local development environment - initializing DB before starting server');
+        // For local dev, ensure DB is ready before accepting requests
+        try {
+            await initializeDatabase();
             app.listen(PORT, () => {
                 debugLog('Local server started successfully', { port: PORT });
                 console.log(`🚀 PhotoVault API server running on port ${PORT}`);
@@ -182,15 +251,12 @@ async function initializeApp() {
                 console.log(`🔗 CORS Origins: ${getAllowedOrigins().join(', ')}`);
             });
         }
-    }
-    catch (error) {
-        debugLog('Application initialization failed', { error: error instanceof Error ? error.message : String(error) });
-        console.error('❌ Failed to initialize app:', error);
-        if (!process.env.AWS_LAMBDA_FUNCTION_NAME) {
+        catch (error) {
+            console.error('❌ Failed to start server:', error);
             process.exit(1);
         }
     }
 }
-// Initialize the app
-initializeApp();
+// Start the server
+startServer();
 exports.default = app;

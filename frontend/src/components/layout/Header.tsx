@@ -2,6 +2,7 @@ import { useAuth0 } from '@auth0/auth0-react';
 import { Link, useLocation } from 'react-router-dom';
 import { Camera, Grid, User, LogOut, Home, HelpCircle } from 'lucide-react';
 import { useState } from 'react';
+import { photoService } from '../../services/photoService';
 
 interface HeaderProps {
   showNavigation?: boolean;
@@ -13,6 +14,9 @@ export default function Header({ showNavigation = true }: HeaderProps) {
   const [showHelp, setShowHelp] = useState(false);
 
   const handleLogout = () => {
+    // Clear all caches before logout to prevent data leakage
+    photoService.clearAllCaches();
+    
     logout({
       logoutParams: {
         returnTo: window.location.origin,
