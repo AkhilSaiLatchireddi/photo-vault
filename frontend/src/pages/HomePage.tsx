@@ -56,6 +56,7 @@ export default function HomePage() {
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedPhoto, setSelectedPhoto] = useState<Photo | null>(null);
+  const [displayName, setDisplayName] = useState<string>('');
 
   debugLog('👤 Auth0 user data:', {
     hasUser: !!user,
@@ -284,6 +285,20 @@ export default function HomePage() {
     if (user) {
       fetchPhotos();
       fetchStats();
+      // Fetch DB profile for display name
+      getToken().then(token => {
+        if (!token) return;
+        fetch(`${API_BASE_URL}/api/profile`, {
+          headers: { Authorization: `Bearer ${token}` }
+        })
+          .then(r => r.json())
+          .then(d => {
+            const p = d?.data;
+            const name = p?.profile?.displayName || p?.name || p?.username || '';
+            setDisplayName(name);
+          })
+          .catch(() => {});
+      });
     }
   }, [user]);
 
@@ -423,7 +438,7 @@ export default function HomePage() {
                       </div>
                       <div>
                         <h2 className="text-2xl font-bold bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 bg-clip-text text-transparent">
-                          {(user as any)?.given_name || user?.name?.split(' ')[0] || user?.email?.split('@')[0] || 'Your'}'s Gallery
+                          {displayName || (user as any)?.given_name || user?.name?.split(' ')[0] || user?.email?.split('@')[0] || 'Your'}'s Gallery
                         </h2>
                         <p className="text-sm text-gray-500 mt-0.5">Your personal photo collection</p>
                       </div>

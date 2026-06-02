@@ -1,6 +1,6 @@
 import { useAuth0 } from '@auth0/auth0-react';
 import { Link, useLocation } from 'react-router-dom';
-import { Camera, Grid, User, LogOut, Home, HelpCircle } from 'lucide-react';
+import { Camera, Grid, User, LogOut, Home, HelpCircle, Users } from 'lucide-react';
 import { useState } from 'react';
 import { photoService } from '../../services/photoService';
 
@@ -73,6 +73,17 @@ export default function Header({ showNavigation = true }: HeaderProps) {
               >
                 <Grid className="h-4 w-4 mr-2" />
                 Albums
+              </Link>
+              <Link
+                to="/people"
+                className={`flex items-center px-4 py-2 rounded-lg transition-all font-medium text-sm ${
+                  location.pathname.startsWith('/people')
+                    ? 'bg-white text-indigo-700 shadow-md'
+                    : 'text-white hover:bg-white/20'
+                }`}
+              >
+                <Users className="h-4 w-4 mr-2" />
+                People
               </Link>
               <Link
                 to="/profile"

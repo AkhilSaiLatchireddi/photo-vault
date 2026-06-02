@@ -18,6 +18,7 @@
     "generate": "npx prisma generate"
   },
   "dependencies": {
+    "@aws-sdk/client-rekognition": "^3.1058.0",
     "@aws-sdk/client-s3": "^3.496.0",
     "@aws-sdk/lib-dynamodb": "^3.1058.0",
     "@aws-sdk/s3-request-presigner": "^3.496.0",

@@ -18,6 +18,8 @@ const HomePage = lazy(() => import('./pages/HomePage'));
 const AlbumsListPage = lazy(() => import('./pages/AlbumsListPage'));
 const AlbumDetailPage = lazy(() => import('./pages/AlbumDetailPage'));
 const ProfilePage = lazy(() => import('./pages/ProfilePage'));
+const PeoplePage = lazy(() => import('./pages/PeoplePage'));
+const PersonDetailPage = lazy(() => import('./pages/PersonDetailPage'));
 const PublicAlbumViewer = lazy(() => import('./components/PublicAlbumViewer'));
 const AuthPage = lazy(() => import('./components/AuthPage'));
 
@@ -90,6 +92,8 @@ const App = () => {
                 <Route path="/albums/:albumId" element={<AlbumDetailPage />} />
                 <Route path="/albums/:albumId/photos/:photoId" element={<AlbumDetailPage />} />
                 <Route path="/profile" element={<ProfilePage />} />
+                <Route path="/people" element={<PeoplePage />} />
+                <Route path="/people/:personId" element={<PersonDetailPage />} />
               </>
             ) : (
               <>

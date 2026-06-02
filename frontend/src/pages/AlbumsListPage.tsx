@@ -69,7 +69,10 @@ export default function AlbumsListPage() {
       setError(null);
       const response = await photoService.getAlbums();
       if (response.success) {
-        setAlbums(response.data);
+        setAlbums({
+          userAlbums: response.data?.userAlbums ?? [],
+          sharedAlbums: response.data?.sharedAlbums ?? [],
+        });
       } else {
         setError('Failed to fetch albums');
       }
@@ -253,13 +256,13 @@ export default function AlbumsListPage() {
                           Public
                         </span>
                       )}
-                      {album.sharedWith.length > 0 && (
+                      {(album.sharedWith ?? []).length > 0 && (
                         <span className="px-2 py-1 bg-blue-500 text-white text-xs rounded-full flex items-center gap-1">
                           <Users className="h-3 w-3" />
                           Shared
                         </span>
                       )}
-                      {!album.isPublic && album.sharedWith.length === 0 && (
+                      {!album.isPublic && (album.sharedWith ?? []).length === 0 && (
                         <span className="px-2 py-1 bg-white/90 backdrop-blur-sm text-gray-700 text-xs rounded-full flex items-center gap-1">
                           <Lock className="h-3 w-3" />
                           Private
@@ -280,7 +283,7 @@ export default function AlbumsListPage() {
                   <div className="flex items-center gap-4 text-xs text-gray-500 mb-4">
                     <span className="flex items-center gap-1">
                       <Grid className="h-3.5 w-3.5" />
-                      {album.photoIds.length} photos
+                      {(album.photoIds ?? []).length} photos
                     </span>
                     <span>•</span>
                     <span>{formatDate(album.createdAt)}</span>
@@ -358,7 +361,7 @@ export default function AlbumsListPage() {
                     <div className="flex items-center gap-4 text-xs text-gray-500 mb-4">
                       <span className="flex items-center gap-1">
                         <Grid className="h-3.5 w-3.5" />
-                        {album.photoIds.length} photos
+                        {(album.photoIds ?? []).length} photos
                       </span>
                       <span>•</span>
                       <span>Shared {formatDate(album.createdAt)}</span>

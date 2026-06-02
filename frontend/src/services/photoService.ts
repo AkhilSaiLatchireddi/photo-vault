@@ -41,7 +41,6 @@ class PhotoService {
       headers: {
         'Authorization': `Bearer ${await this.getToken()}`,
         'Content-Type': 'application/json',
-        'X-Requested-With': 'XMLHttpRequest'
       },
       mode: 'cors'
     });
@@ -97,7 +96,6 @@ class PhotoService {
       headers: {
         'Authorization': `Bearer ${await this.getToken()}`,
         'Content-Type': 'application/json',
-        'X-Requested-With': 'XMLHttpRequest'
       },
       mode: 'cors',
       body: JSON.stringify({ photoIds })
@@ -175,7 +173,6 @@ class PhotoService {
         headers: {
           'Authorization': `Bearer ${token || ''}`,
           'Content-Type': 'application/json',
-          'X-Requested-With': 'XMLHttpRequest'
         },
         mode: 'cors'
       });
@@ -211,7 +208,6 @@ class PhotoService {
       headers: {
         'Authorization': `Bearer ${await this.getToken()}`,
         'Content-Type': 'application/json',
-        'X-Requested-With': 'XMLHttpRequest'
       },
       mode: 'cors',
       body: JSON.stringify(albumData)
@@ -270,7 +266,6 @@ class PhotoService {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
-          'X-Requested-With': 'XMLHttpRequest'
         },
         mode: 'cors'
       });
@@ -344,7 +339,6 @@ class PhotoService {
       headers: {
         'Authorization': `Bearer ${await this.getToken()}`,
         'Content-Type': 'application/json',
-        'X-Requested-With': 'XMLHttpRequest'
       },
       mode: 'cors',
       body: JSON.stringify(updateData)
@@ -375,7 +369,6 @@ class PhotoService {
       headers: {
         'Authorization': `Bearer ${await this.getToken()}`,
         'Content-Type': 'application/json',
-        'X-Requested-With': 'XMLHttpRequest'
       },
       mode: 'cors'
     });
@@ -405,7 +398,6 @@ class PhotoService {
       headers: {
         'Authorization': `Bearer ${await this.getToken()}`,
         'Content-Type': 'application/json',
-        'X-Requested-With': 'XMLHttpRequest'
       },
       mode: 'cors',
       body: JSON.stringify({ photo_ids: photoIds })
@@ -435,7 +427,6 @@ class PhotoService {
       headers: {
         'Authorization': `Bearer ${await this.getToken()}`,
         'Content-Type': 'application/json',
-        'X-Requested-With': 'XMLHttpRequest'
       },
       mode: 'cors'
     });
@@ -469,7 +460,6 @@ class PhotoService {
       headers: {
         'Authorization': `Bearer ${await this.getToken()}`,
         'Content-Type': 'application/json',
-        'X-Requested-With': 'XMLHttpRequest'
       },
       mode: 'cors',
       body: JSON.stringify(shareData)
@@ -495,7 +485,6 @@ class PhotoService {
       headers: {
         'Authorization': `Bearer ${await this.getToken()}`,
         'Content-Type': 'application/json',
-        'X-Requested-With': 'XMLHttpRequest'
       },
       mode: 'cors',
       body: JSON.stringify({ expires_at: expiresAt })
@@ -521,7 +510,6 @@ class PhotoService {
       headers: {
         'Authorization': `Bearer ${await this.getToken()}`,
         'Content-Type': 'application/json',
-        'X-Requested-With': 'XMLHttpRequest'
       },
       mode: 'cors'
     });

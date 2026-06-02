@@ -69,7 +69,10 @@ export default function AlbumsListPage() {
       setError(null);
       const response = await photoService.getAlbums();
       if (response.success) {
-        setAlbums(response.data);
+        setAlbums({
+          userAlbums: response.data?.userAlbums ?? [],
+          sharedAlbums: response.data?.sharedAlbums ?? [],
+        });
       } else {
         setError('Failed to fetch albums');
       }
@@ -237,12 +240,12 @@ export default function AlbumsListPage() {
                       <p className="text-sm text-gray-600 mb-2 line-clamp-2">{album.description}</p>
                     )}
                     <p className="text-xs text-gray-500">
-                      {album.photoIds.length} photos • {formatDate(album.createdAt)}
+                      {(album.photoIds ?? []).length} photos • {formatDate(album.createdAt)}
                     </p>
                   </div>
                   <div className="flex items-center gap-1 ml-4">
                     {album.isPublic && <span title="Public"><ExternalLink className="h-4 w-4 text-green-600" /></span>}
-                    {album.sharedWith.length > 0 && <span title="Shared"><Users className="h-4 w-4 text-blue-600" /></span>}
+                    {(album.sharedWith ?? []).length > 0 && <span title="Shared"><Users className="h-4 w-4 text-blue-600" /></span>}
                     <span title="Private"><Lock className="h-4 w-4 text-gray-400" /></span>
                   </div>
                 </div>
@@ -285,7 +288,7 @@ export default function AlbumsListPage() {
                         <p className="text-sm text-gray-600 mb-2 line-clamp-2">{album.description}</p>
                       )}
                       <p className="text-xs text-gray-500">
-                        {album.photoIds.length} photos • Shared {formatDate(album.createdAt)}
+                        {(album.photoIds ?? []).length} photos • Shared {formatDate(album.createdAt)}
                       </p>
                     </div>
                     <span title="Shared with you"><Users className="h-5 w-5 text-blue-600 ml-4" /></span>
