@@ -23,13 +23,13 @@ export { customRender as render };
 export const mockPhoto = {
   id: 1,
   filename: 'test-photo.jpg',
-  s3_key: 'test-key',
-  original_name: 'test-photo.jpg',
-  mime_type: 'image/jpeg',
-  file_size: 1024000,
+  s3Key: 'test-key',
+  originalName: 'test-photo.jpg',
+  mimeType: 'image/jpeg',
+  fileSize: 1024000,
   width: 800,
   height: 600,
-  uploaded_at: '2023-01-01T00:00:00Z',
+  uploadedAt: '2023-01-01T00:00:00Z',
   downloadUrl: 'https://example.com/test-photo.jpg',
   metadata: {}
 };
@@ -38,12 +38,12 @@ export const mockAlbum = {
   _id: 'album-1',
   title: 'Test Album',
   description: 'Test album description',
-  photo_ids: ['photo-1', 'photo-2'],
+  photoIds: ['photo-1', 'photo-2'],
   owner_id: 'user-1',
-  created_at: '2023-01-01T00:00:00Z',
-  updated_at: '2023-01-01T00:00:00Z',
-  shared_with: [],
-  is_public: false,
+  createdAt: '2023-01-01T00:00:00Z',
+  updatedAt: '2023-01-01T00:00:00Z',
+  sharedWith: [],
+  isPublic: false,
   public_token: null,
   public_expires_at: null
 };

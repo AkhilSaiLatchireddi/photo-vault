@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import FaceOverlay from './FaceOverlay';
 import { 
   ZoomIn, 
   ZoomOut, 
@@ -14,15 +15,14 @@ import {
 } from 'lucide-react';
 
 interface Photo {
-  id?: string | number;
-  _id?: string;
+  photoId?: string;
   filename?: string;
-  original_name: string;
-  mime_type: string;
-  file_size: number;
+  originalName: string;
+  mimeType: string;
+  fileSize: number;
   width?: number;
   height?: number;
-  uploaded_at: string;
+  uploadedAt: string;
   downloadUrl?: string;
 }
 
@@ -63,6 +63,7 @@ export default function PhotoZoomViewer({
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const [showInfo, setShowInfo] = useState(false);
+  const [showFaces, setShowFaces] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [lastTouchDistance, setLastTouchDistance] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -291,16 +292,16 @@ export default function PhotoZoomViewer({
   }, []);
 
   const handleDownload = () => {
-    if (onDownload && (photo.id || photo._id)) {
-      const photoId = photo.id || photo._id!;
-      onDownload(photoId.toString(), photo.original_name);
+    if (onDownload && (photo.photoId)) {
+      const photoId = photo.photoId!;
+      onDownload(photoId.toString(), photo.originalName);
     }
   };
 
   const handleDelete = () => {
-    if (onDelete && (photo.id || photo._id)) {
-      const photoId = photo.id || photo._id!;
-      onDelete(photoId.toString(), photo.original_name);
+    if (onDelete && (photo.photoId)) {
+      const photoId = photo.photoId!;
+      onDelete(photoId.toString(), photo.originalName);
       onClose(); // Close the viewer after delete
     }
   };
@@ -334,7 +335,7 @@ export default function PhotoZoomViewer({
       <div className="flex items-center justify-between p-4 bg-black/50 backdrop-blur-sm">
         <div className="flex items-center gap-2 text-white">
           <h3 className="text-lg font-semibold truncate max-w-md">
-            {photo.original_name}
+            {photo.originalName}
           </h3>
           {photo.width && photo.height && (
             <span className="text-sm text-gray-300 bg-black/30 px-2 py-1 rounded">
@@ -344,6 +345,18 @@ export default function PhotoZoomViewer({
         </div>
         
         <div className="flex items-center gap-2">
+          {photo.photoId && (
+            <button
+              onClick={() => setShowFaces(!showFaces)}
+              className={`p-2 rounded transition-colors text-sm font-medium flex items-center gap-1 ${
+                showFaces ? 'bg-purple-600 text-white' : 'text-white/80 hover:text-white hover:bg-white/10'
+              }`}
+              title="Detect & tag faces"
+            >
+              <span>👤</span>
+              <span className="text-xs">Faces</span>
+            </button>
+          )}
           <button
             onClick={() => setShowInfo(!showInfo)}
             className="p-2 text-white/80 hover:text-white hover:bg-white/10 rounded transition-colors"
@@ -402,11 +415,11 @@ export default function PhotoZoomViewer({
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
       >
-        {photo.downloadUrl && photo.mime_type.startsWith('image/') ? (
+        {photo.downloadUrl && photo.mimeType.startsWith('image/') ? (
           <img
             ref={imageRef}
             src={photo.downloadUrl}
-            alt={photo.original_name}
+            alt={photo.originalName}
             className="absolute inset-0 m-auto max-w-none"
             style={{
               transform: `scale(${transform.scale}) translate(${transform.translateX / transform.scale}px, ${transform.translateY / transform.scale}px) rotate(${transform.rotate}deg)`,
@@ -423,7 +436,30 @@ export default function PhotoZoomViewer({
                 <Move className="h-12 w-12 text-white/60" />
               </div>
               <p className="text-lg">Preview not available for this file type</p>
-              <p className="text-sm text-white/60 mt-2">File format: {photo.mime_type}</p>
+              <p className="text-sm text-white/60 mt-2">File format: {photo.mimeType}</p>
+            </div>
+          </div>
+        )}
+
+        {/* Face overlay — only at scale 1, no rotation, image type */}
+        {showFaces && photo.photoId && photo.mimeType.startsWith('image/') &&
+          transform.scale === 1 && transform.rotate === 0 && imageRef.current && (
+          <div
+            className="absolute pointer-events-none"
+            style={{
+              width: imageRef.current.width,
+              height: imageRef.current.height,
+              left: '50%',
+              top: '50%',
+              transform: 'translate(-50%, -50%)',
+            }}
+          >
+            <div className="relative w-full h-full pointer-events-auto">
+              <FaceOverlay
+                photoId={photo.photoId}
+                imageWidth={imageRef.current.naturalWidth}
+                imageHeight={imageRef.current.naturalHeight}
+              />
             </div>
           </div>
         )}
@@ -493,13 +529,13 @@ export default function PhotoZoomViewer({
         <div className="absolute top-20 right-4 bg-black/80 backdrop-blur-sm text-white p-4 rounded-lg max-w-sm">
           <h4 className="font-semibold mb-2">Photo Information</h4>
           <div className="space-y-1 text-sm">
-            <div><span className="text-gray-300">Name:</span> {photo.original_name}</div>
-            <div><span className="text-gray-300">Size:</span> {formatFileSize(photo.file_size)}</div>
-            <div><span className="text-gray-300">Type:</span> {photo.mime_type}</div>
+            <div><span className="text-gray-300">Name:</span> {photo.originalName}</div>
+            <div><span className="text-gray-300">Size:</span> {formatFileSize(photo.fileSize)}</div>
+            <div><span className="text-gray-300">Type:</span> {photo.mimeType}</div>
             {photo.width && photo.height && (
               <div><span className="text-gray-300">Dimensions:</span> {photo.width} × {photo.height}</div>
             )}
-            <div><span className="text-gray-300">Uploaded:</span> {formatDate(photo.uploaded_at)}</div>
+            <div><span className="text-gray-300">Uploaded:</span> {formatDate(photo.uploadedAt)}</div>
           </div>
           
           <div className="mt-3 pt-3 border-t border-gray-600 text-xs text-gray-400">

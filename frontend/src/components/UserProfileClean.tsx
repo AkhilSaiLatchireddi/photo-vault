@@ -31,8 +31,8 @@ interface UserProfile {
       privacy?: 'public' | 'private' | 'friends';
     };
   };
-  created_at: string;
-  updated_at: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
@@ -211,7 +211,10 @@ export default function UserProfileComponent() {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ profile: profileData }),
+        body: JSON.stringify({
+          ...(displayName ? { name: displayName } : {}),
+          profile: profileData,
+        }),
       });
 
       const data = await response.json();
@@ -285,7 +288,7 @@ export default function UserProfileComponent() {
               </h1>
               <p className="text-gray-600">{profile.email}</p>
               <p className="text-sm text-gray-500">
-                Member since {new Date(profile.created_at).toLocaleDateString()}
+                Member since {profile.createdAt ? new Date(profile.createdAt).toLocaleDateString() : 'Today'}
               </p>
             </div>
           </div>
