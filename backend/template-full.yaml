@@ -10,7 +10,7 @@ Resources:
     Properties:
       FunctionName: photovault-api
       Handler: dist/lambda.handler
-      Runtime: nodejs18.x
+      Runtime: nodejs22.x
       Role: arn:aws:iam::278899968165:role/PhotoVaultLambdaRole
       Timeout: 30
       MemorySize: 256
