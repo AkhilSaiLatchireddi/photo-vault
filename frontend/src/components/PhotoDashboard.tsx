@@ -15,15 +15,15 @@ const debugLog = (...args: any[]) => {
 debugLog('📱 PhotoDashboard component loaded');
 
 interface Photo {
-  id: number;
+  photoId: string;
   filename: string;
-  s3_key: string;
-  original_name: string;
-  mime_type: string;
-  file_size: number;
+  s3Key: string;
+  originalName: string;
+  mimeType: string;
+  fileSize: number;
   width?: number;
   height?: number;
-  uploaded_at: string;
+  uploadedAt: string;
   downloadUrl?: string;
   metadata?: any;
 }
@@ -202,7 +202,7 @@ export default function PhotoDashboard() {
       setUploading(false);
     }
   };  // Download photo
-  const downloadPhoto = async (photoId: number, filename: string) => {
+  const downloadPhoto = async (photoId: string, filename: string) => {
     try {
       const token = await getToken();
       if (!token) {
@@ -235,7 +235,7 @@ export default function PhotoDashboard() {
   };
 
   // Delete photo
-  const deletePhoto = async (photoId: number, filename: string) => {
+  const deletePhoto = async (photoId: string, filename: string) => {
     if (!confirm(`Are you sure you want to delete "${filename}"?`)) return;
 
     try {
@@ -255,7 +255,7 @@ export default function PhotoDashboard() {
       
       if (data.success) {
         // Remove photo from local state
-        setPhotos(photos.filter(photo => photo.id !== photoId));
+        setPhotos(photos.filter(photo => photo.photoId !== photoId));
         // Refresh stats
         fetchStats();
       } else {
@@ -471,15 +471,15 @@ export default function PhotoDashboard() {
             {photos.length > 0 ? (
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
                 {photos.map((photo) => (
-                  <div key={photo.id} className="group relative">
+                  <div key={photo.photoId} className="group relative">
                     <div
                       className="aspect-square bg-gray-100 rounded-lg overflow-hidden cursor-pointer"
                       onClick={() => setSelectedPhoto(photo)}
                     >
-                      {photo.downloadUrl && photo.mime_type.startsWith('image/') ? (
+                      {photo.downloadUrl && photo.mimeType.startsWith('image/') ? (
                         <img
                           src={photo.downloadUrl}
-                          alt={photo.original_name}
+                          alt={photo.originalName}
                           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                         />
                       ) : (
@@ -493,7 +493,7 @@ export default function PhotoDashboard() {
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          downloadPhoto(photo.id, photo.original_name);
+                          downloadPhoto(photo.photoId, photo.originalName);
                         }}
                         className="bg-white/80 backdrop-blur-sm text-gray-800 p-2 rounded-full hover:bg-white transition-colors shadow-md"
                         title="Download"
@@ -503,7 +503,7 @@ export default function PhotoDashboard() {
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          deletePhoto(photo.id, photo.original_name);
+                          deletePhoto(photo.photoId, photo.originalName);
                         }}
                         className="bg-red-500/80 backdrop-blur-sm text-white p-2 rounded-full hover:bg-red-600 transition-colors shadow-md"
                         title="Delete"
@@ -512,7 +512,7 @@ export default function PhotoDashboard() {
                       </button>
                     </div>
                     <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 to-transparent p-3 text-white">
-                      <p className="text-xs font-semibold truncate">{photo.original_name}</p>
+                      <p className="text-xs font-semibold truncate">{photo.originalName}</p>
                     </div>
                   </div>
                 ))}
@@ -537,9 +537,9 @@ export default function PhotoDashboard() {
             {/* Modal Header */}
             <div className="flex items-center justify-between p-6 border-b border-gray-200 bg-white">
               <div>
-                <h3 className="text-xl font-semibold text-gray-900 truncate max-w-md">{selectedPhoto.original_name}</h3>
+                <h3 className="text-xl font-semibold text-gray-900 truncate max-w-md">{selectedPhoto.originalName}</h3>
                 <p className="text-sm text-gray-600 mt-1">
-                  {formatFileSize(selectedPhoto.file_size)} • {formatDate(selectedPhoto.uploaded_at)}
+                  {formatFileSize(selectedPhoto.fileSize)} • {formatDate(selectedPhoto.uploadedAt)}
                 </p>
               </div>
               <button 
@@ -554,11 +554,11 @@ export default function PhotoDashboard() {
             
             {/* Modal Content */}
             <div className="p-6 max-h-[80vh] overflow-auto">
-              {selectedPhoto.downloadUrl && selectedPhoto.mime_type.startsWith('image/') ? (
+              {selectedPhoto.downloadUrl && selectedPhoto.mimeType.startsWith('image/') ? (
                 <div className="text-center">
                   <img 
                     src={selectedPhoto.downloadUrl} 
-                    alt={selectedPhoto.original_name}
+                    alt={selectedPhoto.originalName}
                     className="max-w-full max-h-[60vh] mx-auto object-contain rounded-lg shadow-lg"
                   />
                 </div>
@@ -586,7 +586,7 @@ export default function PhotoDashboard() {
             {/* Modal Actions */}
             <div className="flex justify-center gap-4 p-6 bg-gray-50 border-t border-gray-200">
               <button
-                onClick={() => downloadPhoto(selectedPhoto.id, selectedPhoto.original_name)}
+                onClick={() => downloadPhoto(selectedPhoto.photoId, selectedPhoto.originalName)}
                 className="flex items-center px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
               >
                 <Download className="h-5 w-5 mr-2" />
@@ -594,7 +594,7 @@ export default function PhotoDashboard() {
               </button>
               <button
                 onClick={() => {
-                  deletePhoto(selectedPhoto.id, selectedPhoto.original_name);
+                  deletePhoto(selectedPhoto.photoId, selectedPhoto.originalName);
                   setSelectedPhoto(null);
                 }}
                 className="flex items-center px-6 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors shadow-sm"

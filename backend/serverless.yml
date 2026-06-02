@@ -3,108 +3,97 @@ service: photovault-backend
 provider:
   name: aws
   runtime: nodejs18.x
-  region: ${opt:region, 'us-east-1'}
-  stage: ${opt:stage, 'dev'}
-  
-  environment:
-    NODE_ENV: production
-    AWS_REGION: ${self:provider.region}
-    MONGODB_URI: ${ssm:/photovault/${self:provider.stage}/mongodb-uri~true}
-    JWT_SECRET: ${ssm:/photovault/${self:provider.stage}/jwt-secret~true}
-    S3_BUCKET_NAME: ${ssm:/photovault/${self:provider.stage}/s3-bucket}
-    AUTH0_DOMAIN: ${ssm:/photovault/${self:provider.stage}/auth0-domain}
-    AUTH0_CLIENT_ID: ${ssm:/photovault/${self:provider.stage}/auth0-client-id}
-    
-  iam:
-    role:
-      statements:
-        # S3 permissions
-        - Effect: Allow
-          Action:
-            - s3:GetObject
-            - s3:PutObject
-            - s3:DeleteObject
-            - s3:GetObjectVersion
-          Resource: "arn:aws:s3:::photovault-storage-${self:provider.stage}/*"
-        - Effect: Allow
-          Action:
-            - s3:ListBucket
-          Resource: "arn:aws:s3:::photovault-storage-${self:provider.stage}"
-        
-        # SSM permissions for secrets
-        - Effect: Allow
-          Action:
-            - ssm:GetParameter
-            - ssm:GetParameters
-            - ssm:GetParametersByPath
-          Resource: "arn:aws:ssm:${self:provider.region}:*:parameter/photovault/${self:provider.stage}/*"
-        
-        # CloudWatch Logs
-        - Effect: Allow
-          Action:
-            - logs:CreateLogGroup
-            - logs:CreateLogStream
-            - logs:PutLogEvents
-          Resource: "arn:aws:logs:${self:provider.region}:*:*"
+  region: us-east-1
+  stage: ${opt:stage, 'prod-v1'}
+  profile: photovault-akhil-app-user
 
-functions:
-  api:
-    handler: dist/lambda.handler
-    timeout: 30
-    memorySize: 256
-    provisionedConcurrency: 1
-    events:
-      - http:
-          path: /{proxy+}
-          method: ANY
-          cors:
-            origin: 
-              - https://akhilsailatchireddi.github.io
-              - http://localhost:3000
-            headers:
-              - Content-Type
-              - X-Amz-Date
-              - Authorization
-              - X-Api-Key
-              - X-Amz-Security-Token
-              - X-Amz-User-Agent
-              - X-Requested-With
-              - X-Content-Range
-              - Content-Range
-            allowCredentials: true
-            methods:
-              - GET
-              - POST
-              - PUT
-              - DELETE
-              - OPTIONS
-      - http:
-          path: /
-          method: ANY
-          cors:
-            origin: 
-              - https://akhilsailatchireddi.github.io
-              - http://localhost:3000
-            headers:
-              - Content-Type
-              - X-Amz-Date
-              - Authorization
-              - X-Api-Key
-              - X-Amz-Security-Token
-              - X-Amz-User-Agent
-              - X-Requested-With
-              - X-Content-Range
-              - Content-Range
-            allowCredentials: true
-            methods:
-              - GET
-              - POST
-              - PUT
-              - DELETE
-              - OPTIONS
+  iam:
+    role: arn:aws:iam::278899968165:role/PhotoVaultLambdaRole
+
+# No functions section — Lambda + API Gateway already exist, we update them via CLI
+
+resources:
+  Resources:
+    UsersTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: photovault-users-${self:provider.stage}
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: userId
+            AttributeType: S
+          - AttributeName: auth0Id
+            AttributeType: S
+        KeySchema:
+          - AttributeName: userId
+            KeyType: HASH
+        GlobalSecondaryIndexes:
+          - IndexName: auth0Id-index
+            KeySchema:
+              - AttributeName: auth0Id
+                KeyType: HASH
+            Projection:
+              ProjectionType: ALL
+
+    PhotosTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: photovault-photos-${self:provider.stage}
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: photoId
+            AttributeType: S
+          - AttributeName: userId
+            AttributeType: S
+          - AttributeName: uploadedAt
+            AttributeType: S
+        KeySchema:
+          - AttributeName: photoId
+            KeyType: HASH
+        GlobalSecondaryIndexes:
+          - IndexName: userId-uploadedAt-index
+            KeySchema:
+              - AttributeName: userId
+                KeyType: HASH
+              - AttributeName: uploadedAt
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL
+
+    AlbumsTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: photovault-albums-${self:provider.stage}
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: albumId
+            AttributeType: S
+          - AttributeName: userId
+            AttributeType: S
+          - AttributeName: createdAt
+            AttributeType: S
+          - AttributeName: publicToken
+            AttributeType: S
+        KeySchema:
+          - AttributeName: albumId
+            KeyType: HASH
+        GlobalSecondaryIndexes:
+          - IndexName: userId-createdAt-index
+            KeySchema:
+              - AttributeName: userId
+                KeyType: HASH
+              - AttributeName: createdAt
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL
+          - IndexName: publicToken-index
+            KeySchema:
+              - AttributeName: publicToken
+                KeyType: HASH
+            Projection:
+              ProjectionType: ALL
 
 plugins:
-  - serverless-plugin-typescript
   - serverless-offline
 
 custom:
@@ -115,7 +104,7 @@ custom:
 package:
   patterns:
     - '!src/**'
-    - '!node_modules/.prisma/client/libquery_engine-*'
-    - 'node_modules/.prisma/client/libquery_engine-rhel-*'
-    - '!node_modules/prisma/libquery_engine-*'
-    - '!node_modules/@prisma/engines/**'
+    - '!**/*.test.ts'
+    - '!jest.config.js'
+    - 'dist/**'
+    - 'node_modules/**'

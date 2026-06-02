@@ -14,21 +14,21 @@ import {
 import { photoService } from '../services/photoService';
 
 interface Album {
-  _id: string;
+  albumId: string;
   title: string;
   description?: string;
-  photo_ids: string[];
-  is_public: boolean;
-  public_token?: string;
-  public_expires_at?: string;
-  shared_with: Array<{
-    user_id?: string;
+  photoIds: string[];
+  isPublic: boolean;
+  publicToken?: string;
+  publicExpiresAt?: string;
+  sharedWith: Array<{
+    userId?: string;
     email?: string;
     permission: 'view' | 'edit';
-    shared_at: string;
+    sharedAt: string;
   }>;
-  created_at: string;
-  updated_at: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export default function AlbumsListPage() {
@@ -105,7 +105,7 @@ export default function AlbumsListPage() {
   const deleteAlbum = async (album: Album) => {
     if (!confirm(`Are you sure you want to delete "${album.title}"?`)) return;
     try {
-      const response = await photoService.deleteAlbum(album._id);
+      const response = await photoService.deleteAlbum(album.albumId);
       if (response.success) {
         fetchAlbums();
       } else {
@@ -120,7 +120,7 @@ export default function AlbumsListPage() {
   const shareAlbum = async () => {
     if (!showShareForm || (!shareEmail && !shareUsername)) return;
     try {
-      const response = await photoService.shareAlbum(showShareForm._id, {
+      const response = await photoService.shareAlbum(showShareForm.albumId, {
         email: shareEmail || undefined,
         username: shareUsername || undefined,
         permission: sharePermission
@@ -142,7 +142,7 @@ export default function AlbumsListPage() {
 
   const generatePublicLink = async (album: Album) => {
     try {
-      const response = await photoService.generatePublicLink(album._id);
+      const response = await photoService.generatePublicLink(album.albumId);
       if (response.success) {
         const publicUrl = response.data.publicUrl;
         navigator.clipboard.writeText(publicUrl);
@@ -229,7 +229,7 @@ export default function AlbumsListPage() {
           <h2 className="text-lg font-semibold text-gray-900 mb-4">My Albums</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {albums.userAlbums.map((album) => (
-              <div key={album._id} className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+              <div key={album.albumId} className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
                 <div className="flex items-start justify-between mb-4">
                   <div className="flex-1">
                     <h3 className="text-lg font-semibold text-gray-900 mb-1">{album.title}</h3>
@@ -237,18 +237,18 @@ export default function AlbumsListPage() {
                       <p className="text-sm text-gray-600 mb-2 line-clamp-2">{album.description}</p>
                     )}
                     <p className="text-xs text-gray-500">
-                      {album.photo_ids.length} photos • {formatDate(album.created_at)}
+                      {album.photoIds.length} photos • {formatDate(album.createdAt)}
                     </p>
                   </div>
                   <div className="flex items-center gap-1 ml-4">
-                    {album.is_public && <span title="Public"><ExternalLink className="h-4 w-4 text-green-600" /></span>}
-                    {album.shared_with.length > 0 && <span title="Shared"><Users className="h-4 w-4 text-blue-600" /></span>}
+                    {album.isPublic && <span title="Public"><ExternalLink className="h-4 w-4 text-green-600" /></span>}
+                    {album.sharedWith.length > 0 && <span title="Shared"><Users className="h-4 w-4 text-blue-600" /></span>}
                     <span title="Private"><Lock className="h-4 w-4 text-gray-400" /></span>
                   </div>
                 </div>
                 <div className="flex items-center justify-between">
                   <button
-                    onClick={() => navigate(`/albums/${album._id}`)}
+                    onClick={() => navigate(`/albums/${album.albumId}`)}
                     className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm"
                   >
                     <Eye className="h-4 w-4 mr-2" />
@@ -277,7 +277,7 @@ export default function AlbumsListPage() {
             <h2 className="text-lg font-semibold text-gray-900 mb-4">Shared with Me</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {albums.sharedAlbums.map((album) => (
-                <div key={album._id} className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+                <div key={album.albumId} className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
                   <div className="flex items-start justify-between mb-4">
                     <div className="flex-1">
                       <h3 className="text-lg font-semibold text-gray-900 mb-1">{album.title}</h3>
@@ -285,13 +285,13 @@ export default function AlbumsListPage() {
                         <p className="text-sm text-gray-600 mb-2 line-clamp-2">{album.description}</p>
                       )}
                       <p className="text-xs text-gray-500">
-                        {album.photo_ids.length} photos • Shared {formatDate(album.created_at)}
+                        {album.photoIds.length} photos • Shared {formatDate(album.createdAt)}
                       </p>
                     </div>
                     <span title="Shared with you"><Users className="h-5 w-5 text-blue-600 ml-4" /></span>
                   </div>
                   <button
-                    onClick={() => navigate(`/albums/${album._id}`)}
+                    onClick={() => navigate(`/albums/${album.albumId}`)}
                     className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm"
                   >
                     <Eye className="h-4 w-4 mr-2" />

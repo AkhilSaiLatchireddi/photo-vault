@@ -30,13 +30,13 @@ const customRender = (
 export const mockPhoto = {
   id: 1,
   filename: 'test-photo.jpg',
-  s3_key: 'photos/test-photo.jpg',
-  original_name: 'Test Photo.jpg',
-  mime_type: 'image/jpeg',
-  file_size: 1024000,
+  s3Key: 'photos/test-photo.jpg',
+  originalName: 'Test Photo.jpg',
+  mimeType: 'image/jpeg',
+  fileSize: 1024000,
   width: 1920,
   height: 1080,
-  uploaded_at: '2024-01-01T00:00:00.000Z',
+  uploadedAt: '2024-01-01T00:00:00.000Z',
   downloadUrl: 'https://example.com/test-photo.jpg',
   metadata: {}
 };
@@ -45,24 +45,24 @@ export const mockAlbum = {
   _id: 'album-123',
   title: 'Test Album',
   description: 'A test album',
-  photo_ids: ['photo-1', 'photo-2'],
-  created_at: '2024-01-01T00:00:00.000Z',
-  updated_at: '2024-01-01T00:00:00.000Z',
+  photoIds: ['photo-1', 'photo-2'],
+  createdAt: '2024-01-01T00:00:00.000Z',
+  updatedAt: '2024-01-01T00:00:00.000Z',
   user_id: 'user-123',
-  shared_with: [],
-  is_public: false,
+  sharedWith: [],
+  isPublic: false,
   public_token: null
 };
 
 export const mockPublicPhoto = {
   _id: 'photo-123',
   filename: 'test-photo.jpg',
-  original_name: 'Test Photo.jpg',
-  mime_type: 'image/jpeg',
-  file_size: 1024000,
+  originalName: 'Test Photo.jpg',
+  mimeType: 'image/jpeg',
+  fileSize: 1024000,
   width: 1920,
   height: 1080,
-  uploaded_at: '2024-01-01T00:00:00.000Z',
+  uploadedAt: '2024-01-01T00:00:00.000Z',
   downloadUrl: 'https://example.com/test-photo.jpg'
 };
 

@@ -5,22 +5,22 @@ import { photoService } from '../services/photoService';
 import PhotoZoomViewer from './PhotoZoomViewer';
 
 interface PublicPhoto {
-  _id: string;
+  photoId: string;
   filename: string;
-  original_name: string;
-  mime_type: string;
-  file_size: number;
+  originalName: string;
+  mimeType: string;
+  fileSize: number;
   width?: number;
   height?: number;
-  uploaded_at: string;
+  uploadedAt: string;
   downloadUrl?: string;
 }
 
 interface PublicAlbum {
-  _id: string;
+  photoId: string;
   title: string;
   description?: string;
-  created_at: string;
+  createdAt: string;
   photos: PublicPhoto[];
   photoCount: number;
 }
@@ -112,7 +112,7 @@ export default function PublicAlbumViewer() {
                 <div className="flex items-center justify-center mt-2 text-gray-600 text-sm">
                   <span>{album.photoCount} photos</span>
                   <span className="mx-2">•</span>
-                  <span>Created {new Date(album.created_at).toLocaleDateString()}</span>
+                  <span>Created {new Date(album.createdAt).toLocaleDateString()}</span>
                 </div>
               </div>
             </div>
@@ -137,15 +137,15 @@ export default function PublicAlbumViewer() {
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
                 {album.photos.map((photo) => (
                   <div 
-                    key={photo._id} 
+                    key={photo.photoId} 
                     className="group relative cursor-pointer"
                     onClick={() => setSelectedPhoto(photo)}
                   >
                     <div className="aspect-square bg-gray-100 rounded-lg overflow-hidden">
-                      {photo.downloadUrl && photo.mime_type.startsWith('image/') ? (
+                      {photo.downloadUrl && photo.mimeType.startsWith('image/') ? (
                         <img
                           src={photo.downloadUrl}
-                          alt={photo.original_name}
+                          alt={photo.originalName}
                           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                         />
                       ) : (
@@ -155,7 +155,7 @@ export default function PublicAlbumViewer() {
                       )}
                     </div>
                     <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 to-transparent p-3 text-white opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-                      <p className="text-xs font-semibold truncate">{photo.original_name}</p>
+                      <p className="text-xs font-semibold truncate">{photo.originalName}</p>
                     </div>
                   </div>
                 ))}

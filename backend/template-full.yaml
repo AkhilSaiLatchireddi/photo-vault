@@ -1,0 +1,119 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: PhotoVault backend - all resources
+
+Resources:
+
+  # ── Lambda ───────────────────────────────────────────────────────────────────
+  PhotoVaultFunction:
+    Type: AWS::Lambda::Function
+    DeletionPolicy: Retain
+    Properties:
+      FunctionName: photovault-api
+      Handler: dist/lambda.handler
+      Runtime: nodejs18.x
+      Role: arn:aws:iam::278899968165:role/PhotoVaultLambdaRole
+      Timeout: 30
+      MemorySize: 256
+      Code:
+        ZipFile: " "
+      Environment:
+        Variables:
+          NODE_ENV: production
+          S3_BUCKET_NAME: photovault-app-bucket-akhil
+          DYNAMODB_USERS_TABLE: !Ref UsersTable
+          DYNAMODB_PHOTOS_TABLE: !Ref PhotosTable
+          DYNAMODB_ALBUMS_TABLE: !Ref AlbumsTable
+          AUTH0_DOMAIN: akhil-dev-app.us.auth0.com
+          AUTH0_AUDIENCE: https://photovault-api.com
+          FRONTEND_URL: https://akhilsailatchireddi.github.io/photo-vault
+
+  # ── API Gateway ──────────────────────────────────────────────────────────────
+  PhotoVaultApi:
+    Type: AWS::ApiGateway::RestApi
+    DeletionPolicy: Retain
+    Properties:
+      Name: photovault-api
+      Description: PhotoVault API Gateway
+
+  # ── DynamoDB Tables ──────────────────────────────────────────────────────────
+  UsersTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    Properties:
+      TableName: photovault-users-prod-v1
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: userId
+          AttributeType: S
+        - AttributeName: auth0Id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: userId
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: auth0Id-index
+          KeySchema:
+            - AttributeName: auth0Id
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+
+  PhotosTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    Properties:
+      TableName: photovault-photos-prod-v1
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: photoId
+          AttributeType: S
+        - AttributeName: userId
+          AttributeType: S
+        - AttributeName: uploadedAt
+          AttributeType: S
+      KeySchema:
+        - AttributeName: photoId
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: userId-uploadedAt-index
+          KeySchema:
+            - AttributeName: userId
+              KeyType: HASH
+            - AttributeName: uploadedAt
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+
+  AlbumsTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    Properties:
+      TableName: photovault-albums-prod-v1
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: albumId
+          AttributeType: S
+        - AttributeName: userId
+          AttributeType: S
+        - AttributeName: createdAt
+          AttributeType: S
+        - AttributeName: publicToken
+          AttributeType: S
+      KeySchema:
+        - AttributeName: albumId
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: userId-createdAt-index
+          KeySchema:
+            - AttributeName: userId
+              KeyType: HASH
+            - AttributeName: createdAt
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: publicToken-index
+          KeySchema:
+            - AttributeName: publicToken
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
