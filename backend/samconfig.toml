@@ -1,0 +1,15 @@
+version = 0.1
+
+[default.build.parameters]
+cached = true
+parallel = true
+
+[default.deploy.parameters]
+stack_name        = "photovault-sam"
+region            = "us-east-1"
+profile           = "photovault-akhil-app-user"
+capabilities      = "CAPABILITY_IAM CAPABILITY_AUTO_EXPAND"
+s3_bucket         = "photovault-app-bucket-akhil"
+s3_prefix         = "sam-deployments"
+confirm_changeset = false
+fail_on_empty_changeset = false

@@ -14,21 +14,21 @@ import { photoService } from '../services/photoService';
 import Layout from '../components/layout/Layout';
 
 interface Album {
-  _id: string;
+  albumId: string;
   title: string;
   description?: string;
-  photo_ids: string[];
-  is_public: boolean;
-  public_token?: string;
-  public_expires_at?: string;
-  shared_with: Array<{
-    user_id?: string;
+  photoIds: string[];
+  isPublic: boolean;
+  publicToken?: string;
+  publicExpiresAt?: string;
+  sharedWith: Array<{
+    userId?: string;
     email?: string;
     permission: 'view' | 'edit';
-    shared_at: string;
+    sharedAt: string;
   }>;
-  created_at: string;
-  updated_at: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export default function AlbumsListPage() {
@@ -105,7 +105,7 @@ export default function AlbumsListPage() {
   const deleteAlbum = async (album: Album) => {
     if (!confirm(`Are you sure you want to delete "${album.title}"?`)) return;
     try {
-      const response = await photoService.deleteAlbum(album._id);
+      const response = await photoService.deleteAlbum(album.albumId);
       if (response.success) {
         fetchAlbums();
       } else {
@@ -120,7 +120,7 @@ export default function AlbumsListPage() {
   const shareAlbum = async () => {
     if (!showShareForm || (!shareEmail && !shareUsername)) return;
     try {
-      const response = await photoService.shareAlbum(showShareForm._id, {
+      const response = await photoService.shareAlbum(showShareForm.albumId, {
         email: shareEmail || undefined,
         username: shareUsername || undefined,
         permission: sharePermission
@@ -142,7 +142,7 @@ export default function AlbumsListPage() {
 
   const generatePublicLink = async (album: Album) => {
     try {
-      const response = await photoService.generatePublicLink(album._id);
+      const response = await photoService.generatePublicLink(album.albumId);
       if (response.success) {
         const publicUrl = response.data.publicUrl;
         navigator.clipboard.writeText(publicUrl);
@@ -239,7 +239,7 @@ export default function AlbumsListPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {albums.userAlbums.map((album) => (
               <div 
-                key={album._id} 
+                key={album.albumId} 
                 className="group bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-xl transition-all duration-300 hover:-translate-y-1 hover:border-indigo-200"
               >
                 {/* Album Header with Gradient */}
@@ -247,19 +247,19 @@ export default function AlbumsListPage() {
                   <div className="absolute inset-0 bg-black/20 group-hover:bg-black/10 transition-all"></div>
                   <div className="absolute bottom-3 left-4 right-4">
                     <div className="flex items-center gap-2">
-                      {album.is_public && (
+                      {album.isPublic && (
                         <span className="px-2 py-1 bg-green-500 text-white text-xs rounded-full flex items-center gap-1">
                           <ExternalLink className="h-3 w-3" />
                           Public
                         </span>
                       )}
-                      {album.shared_with.length > 0 && (
+                      {album.sharedWith.length > 0 && (
                         <span className="px-2 py-1 bg-blue-500 text-white text-xs rounded-full flex items-center gap-1">
                           <Users className="h-3 w-3" />
                           Shared
                         </span>
                       )}
-                      {!album.is_public && album.shared_with.length === 0 && (
+                      {!album.isPublic && album.sharedWith.length === 0 && (
                         <span className="px-2 py-1 bg-white/90 backdrop-blur-sm text-gray-700 text-xs rounded-full flex items-center gap-1">
                           <Lock className="h-3 w-3" />
                           Private
@@ -280,16 +280,16 @@ export default function AlbumsListPage() {
                   <div className="flex items-center gap-4 text-xs text-gray-500 mb-4">
                     <span className="flex items-center gap-1">
                       <Grid className="h-3.5 w-3.5" />
-                      {album.photo_ids.length} photos
+                      {album.photoIds.length} photos
                     </span>
                     <span>•</span>
-                    <span>{formatDate(album.created_at)}</span>
+                    <span>{formatDate(album.createdAt)}</span>
                   </div>
 
                   {/* Action Buttons */}
                   <div className="flex items-center gap-2">
                     <button
-                      onClick={() => navigate(`/albums/${album._id}`)}
+                      onClick={() => navigate(`/albums/${album.albumId}`)}
                       className="flex-1 flex items-center justify-center px-4 py-2.5 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-xl hover:from-indigo-700 hover:to-purple-700 text-sm font-medium shadow-md hover:shadow-lg transition-all"
                     >
                       <Eye className="h-4 w-4 mr-2" />
@@ -333,7 +333,7 @@ export default function AlbumsListPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {albums.sharedAlbums.map((album) => (
                 <div 
-                  key={album._id} 
+                  key={album.albumId} 
                   className="group bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-xl transition-all duration-300 hover:-translate-y-1 hover:border-blue-200"
                 >
                   {/* Album Header with Gradient */}
@@ -358,15 +358,15 @@ export default function AlbumsListPage() {
                     <div className="flex items-center gap-4 text-xs text-gray-500 mb-4">
                       <span className="flex items-center gap-1">
                         <Grid className="h-3.5 w-3.5" />
-                        {album.photo_ids.length} photos
+                        {album.photoIds.length} photos
                       </span>
                       <span>•</span>
-                      <span>Shared {formatDate(album.created_at)}</span>
+                      <span>Shared {formatDate(album.createdAt)}</span>
                     </div>
 
                     {/* Action Button */}
                     <button
-                      onClick={() => navigate(`/albums/${album._id}`)}
+                      onClick={() => navigate(`/albums/${album.albumId}`)}
                       className="w-full flex items-center justify-center px-4 py-2.5 bg-gradient-to-r from-blue-600 to-cyan-600 text-white rounded-xl hover:from-blue-700 hover:to-cyan-700 text-sm font-medium shadow-md hover:shadow-lg transition-all"
                     >
                       <Eye className="h-4 w-4 mr-2" />

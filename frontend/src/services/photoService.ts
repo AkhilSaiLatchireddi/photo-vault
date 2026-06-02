@@ -58,7 +58,7 @@ class PhotoService {
       // Cache the URLs
       data.data.photos.forEach((photo: any) => {
         if (photo.downloadUrl) {
-          this.urlCache.set(photo.id, {
+          this.urlCache.set(photo.photoId, {
             url: photo.downloadUrl,
             expires: expiryTime
           });
@@ -337,7 +337,7 @@ class PhotoService {
     }
   }
 
-  async updateAlbum(albumId: string, updateData: { title?: string; description?: string; cover_photo_id?: string }) {
+  async updateAlbum(albumId: string, updateData: { title?: string; description?: string; coverPhotoId?: string }) {
     const response = await fetch(`${this.apiBaseUrl}/api/albums/${albumId}`, {
       method: 'PUT',
       credentials: 'include',

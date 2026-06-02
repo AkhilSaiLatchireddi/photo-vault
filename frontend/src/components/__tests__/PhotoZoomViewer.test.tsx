@@ -21,7 +21,7 @@ describe('PhotoZoomViewer', () => {
       />
     );
 
-    expect(screen.queryByText(mockPhoto.original_name)).not.toBeInTheDocument();
+    expect(screen.queryByText(mockPhoto.originalName)).not.toBeInTheDocument();
   });
 
   it('should render photo information when isOpen is true', () => {
@@ -33,7 +33,7 @@ describe('PhotoZoomViewer', () => {
       />
     );
 
-    expect(screen.getByText(mockPhoto.original_name)).toBeInTheDocument();
+    expect(screen.getByText(mockPhoto.originalName)).toBeInTheDocument();
     expect(screen.getByText('1920 × 1080')).toBeInTheDocument();
   });
 
@@ -108,7 +108,7 @@ describe('PhotoZoomViewer', () => {
     const downloadButton = screen.getByTitle('Download');
     fireEvent.click(downloadButton);
 
-    expect(mockOnDownload).toHaveBeenCalledWith('1', mockPhoto.original_name);
+    expect(mockOnDownload).toHaveBeenCalledWith('1', mockPhoto.originalName);
   });
 
   it('should call onDelete and onClose when delete button is clicked', () => {
@@ -125,7 +125,7 @@ describe('PhotoZoomViewer', () => {
     const deleteButton = screen.getByTitle('Delete Photo');
     fireEvent.click(deleteButton);
 
-    expect(mockOnDelete).toHaveBeenCalledWith('1', mockPhoto.original_name);
+    expect(mockOnDelete).toHaveBeenCalledWith('1', mockPhoto.originalName);
     expect(mockOnClose).toHaveBeenCalledOnce();
   });
 
@@ -209,7 +209,7 @@ describe('PhotoZoomViewer', () => {
   it('should handle non-image files', () => {
     const nonImagePhoto = {
       ...mockPhoto,
-      mime_type: 'application/pdf',
+      mimeType: 'application/pdf',
       downloadUrl: undefined
     };
 
@@ -228,7 +228,7 @@ describe('PhotoZoomViewer', () => {
   it('should handle photos with _id instead of id', () => {
     const mongoPhoto = {
       ...mockPhoto,
-      _id: 'mongo-id-123',
+      photoId: 'mongo-id-123',
       id: undefined
     };
     delete mongoPhoto.id;
@@ -246,7 +246,7 @@ describe('PhotoZoomViewer', () => {
     const downloadButton = screen.getByTitle('Download');
     fireEvent.click(downloadButton);
 
-    expect(mockOnDownload).toHaveBeenCalledWith('mongo-id-123', mockPhoto.original_name);
+    expect(mockOnDownload).toHaveBeenCalledWith('mongo-id-123', mockPhoto.originalName);
   });
 
   it('should show zoom percentage', () => {

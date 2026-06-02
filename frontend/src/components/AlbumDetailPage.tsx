@@ -9,38 +9,35 @@ import {
 } from 'lucide-react';
 import { photoService } from '../services/photoService';
 import PhotoZoomViewer from './PhotoZoomViewer';
-
 interface Album {
-  _id: string;
+  albumId: string;
   title: string;
   description?: string;
-  photo_ids: string[];
-  is_public: boolean;
-  public_token?: string;
-  public_expires_at?: string;
-  shared_with: Array<{
-    user_id?: string;
+  photoIds: string[];
+  isPublic: boolean;
+  publicToken?: string;
+  publicExpiresAt?: string;
+  sharedWith: Array<{
+    userId?: string;
     email?: string;
     permission: 'view' | 'edit';
-    shared_at: string;
+    sharedAt: string;
   }>;
-  created_at: string;
-  updated_at: string;
+  createdAt: string;
+  updatedAt: string;
 }
-
 interface Photo {
-  id?: string | number;
-  _id?: string;
+  photoId?: string;
+  
   filename?: string;
-  original_name: string;
-  mime_type: string;
-  file_size: number;
+  originalName: string;
+  mimeType: string;
+  fileSize: number;
   width?: number;
   height?: number;
-  uploaded_at: string;
+  uploadedAt: string;
   downloadUrl?: string;
 }
-
 export default function AlbumDetailPage() {
   const { albumId } = useParams<{ albumId: string }>();
   const navigate = useNavigate();
@@ -54,14 +51,12 @@ export default function AlbumDetailPage() {
   const [selectedPhotoIds, setSelectedPhotoIds] = useState<string[]>([]);
   const [selectedPhoto, setSelectedPhoto] = useState<Photo | null>(null);
   const [addingPhotos, setAddingPhotos] = useState(false);
-
   useEffect(() => {
     if (albumId) {
       fetchAlbum();
       fetchAllPhotos();
     }
   }, [albumId]);
-
   const fetchAlbum = async () => {
     if (!albumId) return;
     try {
@@ -81,7 +76,6 @@ export default function AlbumDetailPage() {
       setLoading(false);
     }
   };
-
   const fetchAllPhotos = async () => {
     try {
       const response = await photoService.getPhotos();
@@ -92,13 +86,12 @@ export default function AlbumDetailPage() {
       console.error('Error fetching photos:', err);
     }
   };
-
   const addPhotosToAlbum = async () => {
     if (!album || selectedPhotoIds.length === 0) return;
     
     try {
       setAddingPhotos(true);
-      const response = await photoService.addPhotosToAlbum(album._id, selectedPhotoIds);
+      const response = await photoService.addPhotosToAlbum(album.albumId, selectedPhotoIds);
       
       if (response.success) {
         setSelectedPhotoIds([]);
@@ -114,15 +107,13 @@ export default function AlbumDetailPage() {
       setAddingPhotos(false);
     }
   };
-
   const removePhotoFromAlbum = async (photoId: string) => {
     if (!album) return;
     if (!confirm('Remove this photo from the album?')) return;
-
     try {
-      const response = await photoService.removePhotoFromAlbum(album._id, photoId);
+      const response = await photoService.removePhotoFromAlbum(album.albumId, photoId);
       if (response.success) {
-        setAlbumPhotos(albumPhotos.filter(p => (p.id || p._id) !== photoId));
+        setAlbumPhotos(albumPhotos.filter(p => p.photoId !== photoId));
       } else {
         setError('Failed to remove photo from album');
       }
@@ -131,11 +122,9 @@ export default function AlbumDetailPage() {
       console.error('Error removing photo:', err);
     }
   };
-
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString();
   };
-
   if (loading && !album) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -143,7 +132,6 @@ export default function AlbumDetailPage() {
       </div>
     );
   }
-
   if (!album) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -156,7 +144,6 @@ export default function AlbumDetailPage() {
       </div>
     );
   }
-
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
@@ -174,7 +161,7 @@ export default function AlbumDetailPage() {
               <div>
                 <h1 className="text-2xl font-bold text-gray-900">{album.title}</h1>
                 <p className="text-sm text-gray-600">
-                  {albumPhotos.length} photos • Created {formatDate(album.created_at)}
+                  {albumPhotos.length} photos • Created {formatDate(album.createdAt)}
                 </p>
               </div>
             </div>
@@ -193,7 +180,6 @@ export default function AlbumDetailPage() {
           </div>
         </div>
       </div>
-
       <div className="max-w-7xl mx-auto px-6 py-8">
         {/* Error Display */}
         {error && (
@@ -214,14 +200,12 @@ export default function AlbumDetailPage() {
             </div>
           </div>
         )}
-
         {/* Album Description */}
         {album.description && (
           <div className="bg-white rounded-xl p-6 mb-6">
             <p className="text-gray-700">{album.description}</p>
           </div>
         )}
-
         {/* Photos Grid */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-100">
           <div className="p-6">
@@ -229,15 +213,15 @@ export default function AlbumDetailPage() {
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
                 {albumPhotos.map((photo, index) => (
                   <div 
-                    key={`album-photo-${photo.id || photo.filename || index}`} 
+                    key={`album-photo-${photo.photoId || photo.filename || index}`} 
                     className="group relative cursor-pointer"
                     onClick={() => setSelectedPhoto(photo)}
                   >
                     <div className="aspect-square bg-gray-100 rounded-lg overflow-hidden">
-                      {photo.downloadUrl && photo.mime_type.startsWith('image/') ? (
+                      {photo.downloadUrl && photo.mimeType.startsWith('image/') ? (
                         <img
                           src={photo.downloadUrl}
-                          alt={photo.original_name}
+                          alt={photo.originalName}
                           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                         />
                       ) : (
@@ -250,7 +234,7 @@ export default function AlbumDetailPage() {
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          removePhotoFromAlbum((photo.id || photo._id) as string);
+                          removePhotoFromAlbum((photo.photoId) as string);
                         }}
                         className="bg-red-500/80 backdrop-blur-sm text-white p-2 rounded-full hover:bg-red-600"
                         title="Remove from album"
@@ -259,7 +243,7 @@ export default function AlbumDetailPage() {
                       </button>
                     </div>
                     <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 to-transparent p-3 text-white">
-                      <p className="text-xs font-semibold truncate">{photo.original_name}</p>
+                      <p className="text-xs font-semibold truncate">{photo.originalName}</p>
                     </div>
                   </div>
                 ))}
@@ -283,7 +267,6 @@ export default function AlbumDetailPage() {
           </div>
         </div>
       </div>
-
       {/* Add Photos Modal */}
       {showAddPhotos && (
         <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 p-4">
@@ -327,16 +310,16 @@ export default function AlbumDetailPage() {
                   <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
                     {allPhotos
                       .filter((photo) => {
-                        const photoId = (photo.id || photo._id) as string;
-                        return !photoId || !album.photo_ids?.includes(photoId);
+                        const photoId = (photo.photoId) as string;
+                        return !photoId || !album.photoIds?.includes(photoId);
                       })
                       .map((photo, index) => {
-                        const photoId = (photo.id || photo._id) as string;
+                        const photoId = (photo.photoId) as string;
                         const isSelected = selectedPhotoIds.includes(photoId);
                         
                         return (
                           <div
-                            key={`modal-photo-${photo.id || photo.filename || index}`}
+                            key={`modal-photo-${photo.photoId || photo.filename || index}`}
                             className={`aspect-square rounded-lg overflow-hidden relative cursor-pointer hover:shadow-lg transition-all ${
                               isSelected 
                                 ? 'ring-4 ring-blue-500 shadow-lg scale-95' 
@@ -350,10 +333,10 @@ export default function AlbumDetailPage() {
                               }
                             }}
                           >
-                            {photo.downloadUrl && photo.mime_type?.startsWith('image/') ? (
+                            {photo.downloadUrl && photo.mimeType?.startsWith('image/') ? (
                               <img
                                 src={photo.downloadUrl}
-                                alt={photo.original_name}
+                                alt={photo.originalName}
                                 className="w-full h-full object-cover"
                               />
                             ) : (
@@ -369,7 +352,7 @@ export default function AlbumDetailPage() {
                               </div>
                             )}
                             <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent p-2">
-                              <p className="text-xs text-white truncate">{photo.original_name}</p>
+                              <p className="text-xs text-white truncate">{photo.originalName}</p>
                             </div>
                           </div>
                         );
@@ -431,7 +414,6 @@ export default function AlbumDetailPage() {
           </div>
         </div>
       )}
-
       {/* Photo Zoom Viewer */}
       {selectedPhoto && (
         <PhotoZoomViewer

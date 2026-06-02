@@ -68,7 +68,10 @@ Thumbs.db
 *.db
 *.sqlite
 
-# MongoDB
+# Compiled Lambda output (built by CI, not committed)
+lambda-backend/
+
+# Build artifacts
 /backend/data/
 *.db
 *.db-journal
@@ -78,3 +81,13 @@ Thumbs.db
 /temp/
 
 dist/
+
+# Build artifacts
+backend/.aws-sam/
+backend/.build/
+backend/.serverless/
+backend/dist/
+backend/import-resources.json
+backend/template-import-only.yaml
+backend/template-dynamo-only.yaml
+backend/template.yaml

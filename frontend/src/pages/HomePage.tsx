@@ -18,15 +18,15 @@ const debugLog = (...args: any[]) => {
 debugLog('📱 HomePage component loaded');
 
 interface Photo {
-  id: number;
+  photoId: string;
   filename: string;
-  s3_key: string;
-  original_name: string;
-  mime_type: string;
-  file_size: number;
+  s3Key: string;
+  originalName: string;
+  mimeType: string;
+  fileSize: number;
   width?: number;
   height?: number;
-  uploaded_at: string;
+  uploadedAt: string;
   downloadUrl?: string;
   metadata?: any;
 }
@@ -201,7 +201,7 @@ export default function HomePage() {
   };
 
   // Download photo
-  const downloadPhoto = async (photoId: number, filename: string) => {
+  const downloadPhoto = async (photoId: string, filename: string) => {
     try {
       const token = await getToken();
       if (!token) {
@@ -233,7 +233,7 @@ export default function HomePage() {
   };
 
   // Delete photo
-  const deletePhoto = async (photoId: number, filename: string) => {
+  const deletePhoto = async (photoId: string, filename: string) => {
     if (!confirm(`Are you sure you want to delete "${filename}"?`)) return;
 
     try {
@@ -252,10 +252,10 @@ export default function HomePage() {
       const data = await response.json();
       
       if (data.success) {
-        setPhotos(photos.filter(photo => photo.id !== photoId));
+        setPhotos(photos.filter(photo => photo.photoId !== photoId));
         fetchStats();
         // Close photo viewer if it's the deleted photo
-        if (selectedPhoto?.id === photoId) {
+        if (selectedPhoto?.photoId === photoId) {
           handleClosePhoto();
         }
       } else {
@@ -270,7 +270,7 @@ export default function HomePage() {
   // Handle opening a photo
   const handleOpenPhoto = (photo: Photo) => {
     setSelectedPhoto(photo);
-    navigate(`/photos/${photo.id}`);
+    navigate(`/photos/${photo.photoId}`);
   };
 
   // Handle closing photo viewer
@@ -290,7 +290,7 @@ export default function HomePage() {
   // Handle photo URL parameter
   useEffect(() => {
     if (photoId && photos.length > 0) {
-      const photo = photos.find(p => p.id === parseInt(photoId));
+      const photo = photos.find(p => p.photoId === photoId);
       if (photo) {
         setSelectedPhoto(photo);
       }
@@ -456,15 +456,15 @@ export default function HomePage() {
               ) : photos.length > 0 ? (
                 <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
                   {photos.map((photo) => (
-                    <div key={photo.id} className="group relative">
+                    <div key={photo.photoId} className="group relative">
                       <div
                         className="aspect-square bg-gradient-to-br from-gray-100 to-gray-200 rounded-xl overflow-hidden cursor-pointer shadow-md hover:shadow-2xl transition-all duration-500 ring-2 ring-transparent hover:ring-indigo-400 hover:scale-110"
                         onClick={() => handleOpenPhoto(photo)}
                       >
-                        {photo.downloadUrl && photo.mime_type.startsWith('image/') ? (
+                        {photo.downloadUrl && photo.mimeType.startsWith('image/') ? (
                           <img
                             src={photo.downloadUrl}
-                            alt={photo.original_name}
+                            alt={photo.originalName}
                             className="w-full h-full object-cover group-hover:scale-125 transition-transform duration-700 ease-out"
                           />
                         ) : (
@@ -480,7 +480,7 @@ export default function HomePage() {
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
-                            downloadPhoto(photo.id, photo.original_name);
+                            downloadPhoto(photo.photoId, photo.originalName);
                           }}
                           className="bg-white text-gray-800 p-2 rounded-full hover:bg-indigo-500 hover:text-white transition-all shadow-lg transform hover:scale-125 hover:rotate-12"
                           title="Download"
@@ -490,7 +490,7 @@ export default function HomePage() {
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
-                            deletePhoto(photo.id, photo.original_name);
+                            deletePhoto(photo.photoId, photo.originalName);
                           }}
                           className="bg-white text-gray-800 p-2 rounded-full hover:bg-red-500 hover:text-white transition-all shadow-lg transform hover:scale-125 hover:-rotate-12"
                           title="Delete"
@@ -499,9 +499,9 @@ export default function HomePage() {
                         </button>
                       </div>
                       <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 via-black/50 to-transparent p-3 text-white transform translate-y-4 group-hover:translate-y-0 transition-transform duration-500">
-                        <p className="text-xs font-semibold truncate">{photo.original_name}</p>
+                        <p className="text-xs font-semibold truncate">{photo.originalName}</p>
                         <p className="text-xs text-gray-300 opacity-0 group-hover:opacity-100 transition-opacity duration-500">
-                          {new Date(photo.uploaded_at).toLocaleDateString()}
+                          {new Date(photo.uploadedAt).toLocaleDateString()}
                         </p>
                       </div>
                     </div>
@@ -528,8 +528,8 @@ export default function HomePage() {
           photo={selectedPhoto}
           isOpen={true}
           onClose={handleClosePhoto}
-          onDownload={(photoId, filename) => downloadPhoto(parseInt(photoId), filename)}
-          onDelete={(photoId, filename) => deletePhoto(parseInt(photoId), filename)}
+          onDownload={(photoId, filename) => downloadPhoto(photoId, filename)}
+          onDelete={(photoId, filename) => deletePhoto(photoId, filename)}
           showDownloadButton={true}
           showDeleteButton={true}
         />
