@@ -20,34 +20,21 @@ router.get('/', checkJwt, ensureUserMiddleware, async (req: Request, res: Respon
 // PUT /api/profile
 router.put('/', checkJwt, ensureUserMiddleware, async (req: Request, res: Response) => {
   try {
-    const { profile, name, username } = req.body;
+    const { profile } = req.body;
+    if (!profile || typeof profile !== 'object') {
+      return res.status(400).json({ success: false, error: 'profile object is required' });
+    }
 
     const existing = await db.getUserById(req.user!.id);
     if (!existing) return res.status(404).json({ success: false, error: 'User not found' });
 
-    const patch: Partial<typeof existing> = {};
+    const merged = {
+      ...existing.profile,
+      ...profile,
+      preferences: { ...existing.profile?.preferences, ...profile.preferences },
+    };
 
-    // Allow updating top-level name and username
-    if (name && typeof name === 'string') patch.name = name.trim();
-    if (username && typeof username === 'string') {
-      const clean = username.trim().toLowerCase().replace(/[^a-z0-9_]/g, '');
-      if (clean.length >= 2) patch.username = clean;
-    }
-
-    // Merge nested profile object
-    if (profile && typeof profile === 'object') {
-      patch.profile = {
-        ...existing.profile,
-        ...profile,
-        preferences: { ...existing.profile?.preferences, ...profile.preferences },
-      };
-    }
-
-    if (Object.keys(patch).length === 0) {
-      return res.status(400).json({ success: false, error: 'Nothing to update' });
-    }
-
-    const updated = await db.updateUser(req.user!.id, patch);
+    const updated = await db.updateUser(req.user!.id, { profile: merged });
     res.json({ success: true, data: updated, message: 'Profile updated successfully' });
   } catch (error) {
     console.error('Error updating profile:', error);

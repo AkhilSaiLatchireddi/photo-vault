@@ -15,15 +15,10 @@ export const ensureUserMiddleware = async (req: Request, res: Response, next: Ne
       const name = (payload.name as string | undefined) ?? email.split('@')[0] ?? 'user';
       const picture = payload.picture as string | undefined;
 
-      // Generate a clean username: prefer email prefix, fall back to short ID from sub
-      const emailPrefix = email ? email.split('@')[0].toLowerCase().replace(/[^a-z0-9]/g, '') : '';
-      const shortId = sub.includes('|') ? sub.split('|')[1].substring(0, 8) : sub.substring(0, 8);
-      const username = emailPrefix || shortId || 'user';
-
       user = await db.createUser({
         auth0Id: sub,
         email,
-        username,
+        username: name.toLowerCase().replace(/[^a-z0-9]/g, '') || sub.replace(/[^a-z0-9]/g, ''),
         name,
         picture,
       });

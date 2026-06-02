@@ -2,7 +2,7 @@ service: photovault-backend
 
 provider:
   name: aws
-  runtime: nodejs22.x
+  runtime: nodejs18.x
   region: us-east-1
   stage: ${opt:stage, 'prod-v1'}
   profile: photovault-akhil-app-user

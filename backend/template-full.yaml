@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: PhotoVault backend - all resources including people/faces feature
+Description: PhotoVault backend - all resources
 
 Resources:
 
@@ -10,7 +10,7 @@ Resources:
     Properties:
       FunctionName: photovault-api
       Handler: dist/lambda.handler
-      Runtime: nodejs22.x
+      Runtime: nodejs18.x
       Role: arn:aws:iam::278899968165:role/PhotoVaultLambdaRole
       Timeout: 30
       MemorySize: 256
@@ -26,9 +26,6 @@ Resources:
           AUTH0_DOMAIN: akhil-dev-app.us.auth0.com
           AUTH0_AUDIENCE: https://photovault-api.com
           FRONTEND_URL: https://akhilsailatchireddi.github.io/photo-vault
-          DYNAMODB_PEOPLE_TABLE: photovault-people-prod-v1
-          DYNAMODB_PHOTO_FACES_TABLE: photovault-photo-faces-prod-v1
-          REKOGNITION_COLLECTION_ID: photovault-faces-prod-v1
 
   # ── API Gateway ──────────────────────────────────────────────────────────────
   PhotoVaultApi:
@@ -117,50 +114,6 @@ Resources:
         - IndexName: publicToken-index
           KeySchema:
             - AttributeName: publicToken
-              KeyType: HASH
-          Projection:
-            ProjectionType: ALL
-
-  PeopleTable:
-    Type: AWS::DynamoDB::Table
-    DeletionPolicy: Retain
-    Properties:
-      TableName: photovault-people-prod-v1
-      BillingMode: PAY_PER_REQUEST
-      AttributeDefinitions:
-        - AttributeName: personId
-          AttributeType: S
-        - AttributeName: userId
-          AttributeType: S
-      KeySchema:
-        - AttributeName: personId
-          KeyType: HASH
-      GlobalSecondaryIndexes:
-        - IndexName: userId-index
-          KeySchema:
-            - AttributeName: userId
-              KeyType: HASH
-          Projection:
-            ProjectionType: ALL
-
-  PhotoFacesTable:
-    Type: AWS::DynamoDB::Table
-    DeletionPolicy: Retain
-    Properties:
-      TableName: photovault-photo-faces-prod-v1
-      BillingMode: PAY_PER_REQUEST
-      AttributeDefinitions:
-        - AttributeName: photoId
-          AttributeType: S
-        - AttributeName: personId
-          AttributeType: S
-      KeySchema:
-        - AttributeName: photoId
-          KeyType: HASH
-      GlobalSecondaryIndexes:
-        - IndexName: personId-index
-          KeySchema:
-            - AttributeName: personId
               KeyType: HASH
           Projection:
             ProjectionType: ALL
