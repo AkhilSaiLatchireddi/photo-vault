@@ -43,16 +43,17 @@ interface Transform {
   rotate: number;
 }
 
-export default function PhotoZoomViewer({ 
-  photo, 
-  isOpen, 
-  onClose, 
+export default function PhotoZoomViewer({
+  photo,
+  isOpen,
+  onClose,
   onDownload,
   onDelete,
   showDownloadButton = false,
-  showDeleteButton = false 
+  showDeleteButton = false
 }: PhotoZoomViewerProps) {
   console.log('PhotoZoomViewer rendered with:', { photo, isOpen });
+  const isVideo = photo.mimeType.startsWith('video/');
   const [transform, setTransform] = useState<Transform>({
     scale: 1,
     translateX: 0,
@@ -402,19 +403,27 @@ export default function PhotoZoomViewer({
         </div>
       </div>
 
-      {/* Main Image Container */}
-      <div 
-        className="flex-1 relative overflow-hidden cursor-grab active:cursor-grabbing"
-        onWheel={handleWheel}
-        onMouseDown={handleMouseDown}
-        onMouseMove={handleMouseMove}
-        onMouseUp={handleMouseUp}
-        onMouseLeave={handleMouseUp}
-        onTouchStart={handleTouchStart}
-        onTouchMove={handleTouchMove}
-        onTouchEnd={handleTouchEnd}
+      {/* Main Content Container */}
+      <div
+        className={`flex-1 relative overflow-hidden ${isVideo ? 'flex items-center justify-center bg-black' : 'cursor-grab active:cursor-grabbing'}`}
+        onWheel={isVideo ? undefined : handleWheel}
+        onMouseDown={isVideo ? undefined : handleMouseDown}
+        onMouseMove={isVideo ? undefined : handleMouseMove}
+        onMouseUp={isVideo ? undefined : handleMouseUp}
+        onMouseLeave={isVideo ? undefined : handleMouseUp}
+        onTouchStart={isVideo ? undefined : handleTouchStart}
+        onTouchMove={isVideo ? undefined : handleTouchMove}
+        onTouchEnd={isVideo ? undefined : handleTouchEnd}
       >
-        {photo.downloadUrl && photo.mimeType.startsWith('image/') ? (
+        {isVideo && photo.downloadUrl ? (
+          <video
+            src={photo.downloadUrl}
+            controls
+            controlsList="nodownload"
+            className="max-h-full max-w-full rounded"
+            style={{ maxHeight: 'calc(100vh - 160px)' }}
+          />
+        ) : photo.downloadUrl && photo.mimeType.startsWith('image/') ? (
           <img
             ref={imageRef}
             src={photo.downloadUrl}
@@ -460,8 +469,8 @@ export default function PhotoZoomViewer({
         )}
       </div>
 
-      {/* Bottom Controls */}
-      <div className="flex items-center justify-center gap-2 p-4 bg-black/50 backdrop-blur-sm">
+      {/* Bottom Controls — hidden for video (uses native player controls) */}
+      <div className={`flex items-center justify-center gap-2 p-4 bg-black/50 backdrop-blur-sm ${isVideo ? 'hidden' : ''}`}>
         <button
           onClick={zoomOut}
           className="p-2 text-white/80 hover:text-white hover:bg-white/10 rounded transition-colors"
@@ -522,7 +531,7 @@ export default function PhotoZoomViewer({
       {/* Photo Info Panel */}
       {showInfo && (
         <div className="absolute top-20 right-4 bg-black/80 backdrop-blur-sm text-white p-4 rounded-lg max-w-sm">
-          <h4 className="font-semibold mb-2">Photo Information</h4>
+          <h4 className="font-semibold mb-2">{isVideo ? 'Video' : 'Photo'} Information</h4>
           <div className="space-y-1 text-sm">
             <div><span className="text-gray-300">Name:</span> {photo.originalName}</div>
             <div><span className="text-gray-300">Size:</span> {formatFileSize(photo.fileSize)}</div>

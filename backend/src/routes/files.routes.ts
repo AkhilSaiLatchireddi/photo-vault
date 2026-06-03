@@ -108,6 +108,20 @@ router.post('/upload-url', async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, error: 'fileName and contentType are required' });
     }
 
+    const ALLOWED_MIME_TYPES = new Set([
+      // Images
+      'image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp',
+      'image/heic', 'image/heif', 'image/bmp', 'image/tiff', 'image/svg+xml',
+      'image/avif',
+      // Videos
+      'video/mp4', 'video/quicktime', 'video/x-msvideo', 'video/x-ms-wmv',
+      'video/webm', 'video/ogg', 'video/3gpp', 'video/3gpp2',
+      'video/mpeg', 'video/x-matroska', 'video/x-flv', 'video/mp2t',
+    ]);
+    if (!ALLOWED_MIME_TYPES.has(contentType.toLowerCase())) {
+      return res.status(400).json({ success: false, error: `File type "${contentType}" is not supported` });
+    }
+
     const now = new Date();
     const y = now.getFullYear();
     const m = (now.getMonth() + 1).toString().padStart(2, '0');

@@ -144,7 +144,8 @@ export default function AlbumsListPage() {
     try {
       const response = await photoService.generatePublicLink(album.albumId);
       if (response.success) {
-        const publicUrl = response.data.publicUrl;
+        const token = response.data.publicToken;
+        const publicUrl = `${window.location.origin}${import.meta.env.BASE_URL}album/public/${token}`;
         navigator.clipboard.writeText(publicUrl);
         alert(`Public link copied to clipboard!\n\n${publicUrl}`);
         fetchAlbums();

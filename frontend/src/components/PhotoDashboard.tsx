@@ -458,6 +458,15 @@ export default function PhotoDashboard() {
                           alt={photo.originalName}
                           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                         />
+                      ) : photo.downloadUrl && photo.mimeType.startsWith('video/') ? (
+                        <div className="w-full h-full bg-gray-900 flex items-center justify-center relative">
+                          <video src={photo.downloadUrl} className="w-full h-full object-cover" muted preload="metadata" />
+                          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                            <div className="bg-black/50 rounded-full p-2">
+                              <svg className="h-6 w-6 text-white" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                            </div>
+                          </div>
+                        </div>
                       ) : (
                         <div className="w-full h-full bg-gray-200 flex items-center justify-center">
                           <Image className="h-8 w-8 text-gray-400" />
@@ -532,10 +541,18 @@ export default function PhotoDashboard() {
             <div className="p-6 max-h-[80vh] overflow-auto">
               {selectedPhoto.downloadUrl && selectedPhoto.mimeType.startsWith('image/') ? (
                 <div className="text-center">
-                  <img 
-                    src={selectedPhoto.downloadUrl} 
+                  <img
+                    src={selectedPhoto.downloadUrl}
                     alt={selectedPhoto.originalName}
                     className="max-w-full max-h-[60vh] mx-auto object-contain rounded-lg shadow-lg"
+                  />
+                </div>
+              ) : selectedPhoto.downloadUrl && selectedPhoto.mimeType.startsWith('video/') ? (
+                <div className="text-center">
+                  <video
+                    src={selectedPhoto.downloadUrl}
+                    controls
+                    className="max-w-full max-h-[60vh] mx-auto rounded-lg shadow-lg"
                   />
                 </div>
               ) : (

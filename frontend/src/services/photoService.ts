@@ -531,11 +531,9 @@ class PhotoService {
   async getPublicAlbum(publicToken: string) {
     const response = await fetch(`${this.apiBaseUrl}/api/public/albums/${publicToken}`, {
       method: 'GET',
-      credentials: 'include', // Keep only essential CORS setting
       headers: {
         'Content-Type': 'application/json'
       },
-      mode: 'cors' // Keep only essential CORS setting
     });
 
     if (!response.ok) {

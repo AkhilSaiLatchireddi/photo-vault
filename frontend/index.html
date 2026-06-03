@@ -3,6 +3,16 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script>
+      // GitHub Pages SPA: restore path from ?p= query param set by 404.html
+      (function() {
+        var p = window.location.search.slice(1).split('&').find(function(s) { return s.startsWith('p='); });
+        if (p) {
+          var path = decodeURIComponent(p.slice(2));
+          window.history.replaceState(null, '', '/' + path);
+        }
+      })();
+    </script>
     <meta name="description" content="Secure, unlimited photo storage with intelligent organization and memories" />
     <meta name="keywords" content="photos, storage, memories, aws, personal cloud" />
     <title>PhotoVault - Personal Photo Storage</title>
