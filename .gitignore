@@ -2,6 +2,7 @@
 
 
 .claude/
+scripts/
 
 # dependencies
 node_modules/
