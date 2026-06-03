@@ -7,6 +7,8 @@ import profileRoutes from './routes/profile.routes';
 import filesRoutes from './routes/files.routes';
 import albumsRoutes from './routes/albums.routes';
 import publicRoutes from './routes/public.routes';
+import peopleRoutes from './routes/people.routes';
+import adminRoutes from './routes/admin.routes';
 
 if (process.env.NODE_ENV !== 'production') dotenv.config();
 
@@ -55,6 +57,8 @@ app.get('/health', (_req, res) => {
 app.use('/api/profile', profileRoutes);
 app.use('/api/files', filesRoutes);
 app.use('/api/albums', albumsRoutes);
+app.use('/api/people', peopleRoutes);
+app.use('/api/admin', adminRoutes);
 app.use('/api/public/albums', publicRoutes);
 
 app.use('*', (_req, res) => res.status(404).json({ error: 'Not Found' }));

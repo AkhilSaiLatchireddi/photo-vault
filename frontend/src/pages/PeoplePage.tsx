@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Users, Camera, Edit2, Check, X, Trash2 } from 'lucide-react';
+import { Users, Camera, Edit2, Check, X, Trash2, Scan, Merge } from 'lucide-react';
 import Layout from '../components/layout/Layout';
 import { config } from '../config/env';
 import { useAuth0 } from '@auth0/auth0-react';
@@ -23,6 +23,9 @@ export default function PeoplePage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [scanning, setScanning] = useState(false);
+  const [scanResult, setScanResult] = useState<string | null>(null);
+  const [mergingId, setMergingId] = useState<string | null>(null); // person being merged
 
   const getToken = async () => {
     try {
@@ -45,6 +48,29 @@ export default function PeoplePage() {
   };
 
   useEffect(() => { fetchPeople(); }, []);
+
+  const scanAllPhotos = async () => {
+    setScanning(true);
+    setScanResult(null);
+    try {
+      const token = await getToken();
+      // Use EventBridge-backed endpoint — returns immediately, processing is async
+      const res = await fetch(`${API}/api/admin/process-photos`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      if (data.success) {
+        setScanResult(data.data.message);
+        // Refresh people after a short delay to pick up fast-processing results
+        setTimeout(() => fetchPeople(), 5000);
+      }
+    } catch (e) {
+      setError('Processing failed');
+    } finally {
+      setScanning(false);
+    }
+  };
 
   const saveName = async (personId: string) => {
     if (!editName.trim()) return;
@@ -75,6 +101,24 @@ export default function PeoplePage() {
     } catch { setError('Failed to remove person'); }
   };
 
+  const mergePeople = async (keepPersonId: string, mergePersonId: string) => {
+    try {
+      const token = await getToken();
+      const res = await fetch(`${API}/api/people/merge`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ keepPersonId, mergePersonId }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setMergingId(null);
+        await fetchPeople();
+      } else {
+        setError('Failed to merge');
+      }
+    } catch { setError('Failed to merge people'); }
+  };
+
   return (
     <Layout>
       <div className="min-h-screen bg-gradient-to-br from-purple-50 via-pink-50 to-orange-50">
@@ -88,9 +132,24 @@ export default function PeoplePage() {
               </h2>
               <p className="text-gray-500 mt-1">Faces recognised in your photos</p>
             </div>
-            <div className="flex items-center gap-2 px-4 py-2 bg-white rounded-xl shadow-sm border border-gray-100">
-              <Users className="h-5 w-5 text-purple-500" />
-              <span className="text-sm font-medium text-gray-700">{people.length} people</span>
+            <div className="flex items-center gap-3">
+              {scanResult && (
+                <span className="text-xs text-green-600 bg-green-50 px-3 py-1.5 rounded-lg border border-green-200">
+                  ✓ {scanResult}
+                </span>
+              )}
+              <button
+                onClick={scanAllPhotos}
+                disabled={scanning}
+                className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white text-sm font-medium rounded-xl shadow transition-colors"
+              >
+                <Scan className="h-4 w-4" />
+                {scanning ? 'Queuing…' : 'Process All Photos'}
+              </button>
+              <div className="flex items-center gap-2 px-4 py-2 bg-white rounded-xl shadow-sm border border-gray-100">
+                <Users className="h-5 w-5 text-purple-500" />
+                <span className="text-sm font-medium text-gray-700">{people.length} people</span>
+              </div>
             </div>
           </div>
 
@@ -112,7 +171,7 @@ export default function PeoplePage() {
               </div>
               <h3 className="text-xl font-semibold text-gray-800 mb-2">No people found yet</h3>
               <p className="text-gray-500 mb-6 max-w-sm mx-auto">
-                Open any photo and tap "Detect Faces" to start recognising people in your collection.
+                Click "Process All Photos" to detect faces. New photos are processed automatically on upload. Results appear in seconds.
               </p>
               <button
                 onClick={() => navigate('/')}
@@ -126,7 +185,7 @@ export default function PeoplePage() {
               {people.map(person => (
                 <div
                   key={person.personId}
-                  className="group flex flex-col items-center"
+                  className="group flex flex-col items-center relative"
                 >
                   {/* Face circle */}
                   <div
@@ -185,13 +244,44 @@ export default function PeoplePage() {
                     <p className="text-xs text-gray-400 mt-0.5">{person.photoCount} photo{person.photoCount !== 1 ? 's' : ''}</p>
                   </div>
 
-                  {/* Delete — shows on hover */}
-                  <button
-                    className="mt-1 opacity-0 group-hover:opacity-100 transition-opacity text-xs text-red-400 hover:text-red-600 flex items-center gap-0.5"
-                    onClick={() => deletePerson(person.personId, person.name)}
-                  >
-                    <Trash2 className="h-3 w-3" /> Remove
-                  </button>
+                  {/* Merge / Delete — shows on hover */}
+                  <div className="mt-1 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-2">
+                    <button
+                      className="text-xs text-purple-400 hover:text-purple-700 flex items-center gap-0.5"
+                      onClick={() => setMergingId(mergingId === person.personId ? null : person.personId)}
+                      title="Merge with another person"
+                    >
+                      <Merge className="h-3 w-3" /> Merge
+                    </button>
+                    <button
+                      className="text-xs text-red-400 hover:text-red-600 flex items-center gap-0.5"
+                      onClick={() => deletePerson(person.personId, person.name)}
+                    >
+                      <Trash2 className="h-3 w-3" /> Remove
+                    </button>
+                  </div>
+
+                  {/* Merge picker */}
+                  {mergingId === person.personId && (
+                    <div className="absolute z-20 bg-white rounded-xl shadow-xl border border-gray-200 p-3 w-48 mt-1">
+                      <p className="text-xs font-semibold text-gray-600 mb-2">Merge into...</p>
+                      {people.filter(p => p.personId !== person.personId).map(other => (
+                        <button
+                          key={other.personId}
+                          className="w-full text-left text-sm px-2 py-1.5 rounded-lg hover:bg-purple-50 hover:text-purple-700 transition-colors"
+                          onClick={() => mergePeople(other.personId, person.personId)}
+                        >
+                          {other.name}
+                        </button>
+                      ))}
+                      <button
+                        className="mt-2 text-xs text-gray-400 hover:text-gray-600 w-full text-center"
+                        onClick={() => setMergingId(null)}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>

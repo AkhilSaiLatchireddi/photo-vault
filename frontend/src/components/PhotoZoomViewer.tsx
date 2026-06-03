@@ -1,3 +1,4 @@
+import FaceOverlay from './FaceOverlay';
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { 
   ZoomIn, 
@@ -62,6 +63,7 @@ export default function PhotoZoomViewer({
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const [showInfo, setShowInfo] = useState(false);
+  const [showFaces, setShowFaces] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [lastTouchDistance, setLastTouchDistance] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -343,6 +345,17 @@ export default function PhotoZoomViewer({
         </div>
         
         <div className="flex items-center gap-2">
+          {photo.photoId && (
+            <button
+              onClick={() => setShowFaces(!showFaces)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1 transition-colors ${
+                showFaces ? 'bg-purple-600 text-white' : 'text-white/80 hover:text-white hover:bg-white/10'
+              }`}
+              title="Detect & tag faces"
+            >
+              <span>👤</span> Faces
+            </button>
+          )}
           <button
             onClick={() => setShowInfo(!showInfo)}
             className="p-2 text-white/80 hover:text-white hover:bg-white/10 rounded transition-colors"
@@ -423,6 +436,25 @@ export default function PhotoZoomViewer({
               </div>
               <p className="text-lg">Preview not available for this file type</p>
               <p className="text-sm text-white/60 mt-2">File format: {photo.mimeType}</p>
+            </div>
+          </div>
+        )}
+
+        {/* Face overlay — shown when Faces button is active and image is loaded */}
+        {showFaces && photo.photoId && photo.mimeType?.startsWith('image/') && imageRef.current && (
+          <div
+            className="absolute pointer-events-none"
+            style={{
+              width: imageRef.current.width,
+              height: imageRef.current.height,
+              left: '50%',
+              top: '50%',
+              transform: `translate(-50%, -50%) scale(${transform.scale}) translate(${transform.translateX / transform.scale}px, ${transform.translateY / transform.scale}px) rotate(${transform.rotate}deg)`,
+              transformOrigin: 'center center',
+            }}
+          >
+            <div className="relative w-full h-full pointer-events-auto">
+              <FaceOverlay photoId={photo.photoId} />
             </div>
           </div>
         )}

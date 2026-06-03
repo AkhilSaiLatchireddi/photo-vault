@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useAuth0 } from '@auth0/auth0-react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Camera, Upload, Download, Trash2, Image, AlertCircle, BarChart, User } from 'lucide-react';
+import { Camera, Download, Trash2, Image, AlertCircle, BarChart } from 'lucide-react';
 import { config } from '../config/env';
 import { photoService } from '../services/photoService';
 import PhotoZoomViewer from '../components/PhotoZoomViewer';
@@ -186,8 +186,10 @@ export default function HomePage() {
         throw new Error(`Failed to upload file to S3: ${s3Response.status} ${s3Response.statusText}`);
       }
 
+      // HEIC conversion and face detection are now automatic via S3 → Lambda triggers
+      // No manual calls needed here
+
       // Refresh photos and stats
-      // Clear photos cache to force fresh data after upload
       photoService.invalidatePhotosCache();
       await Promise.all([fetchPhotos(), fetchStats()]);
       
@@ -353,32 +355,6 @@ export default function HomePage() {
                 </div>
               </div>
               
-              <div className="bg-white/70 backdrop-blur-sm rounded-xl p-3 border border-purple-200/50 hover:shadow-lg hover:scale-105 transition-all duration-300">
-                <div className="flex items-center gap-2">
-                  <div className="bg-gradient-to-br from-purple-500 to-purple-600 p-2 rounded-lg shadow-sm">
-                    <User className="h-4 w-4 text-white" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-[10px] font-medium text-gray-600 uppercase tracking-wide">Account</p>
-                    <p className="text-sm font-bold text-gray-900 truncate">{stats.user}</p>
-                  </div>
-                </div>
-              </div>
-              
-              <div className="bg-white/70 backdrop-blur-sm rounded-xl p-3 border border-orange-200/50 hover:shadow-lg hover:scale-105 transition-all duration-300">
-                <div className="flex items-center gap-2">
-                  <div className="bg-gradient-to-br from-orange-500 to-orange-600 p-2 rounded-lg shadow-sm">
-                    <Upload className="h-4 w-4 text-white" />
-                  </div>
-                  <div>
-                    <p className="text-[10px] font-medium text-gray-600 uppercase tracking-wide">Last Upload</p>
-                    <p className="text-xs font-bold text-gray-900">
-                      {stats.lastUpload ? new Date(stats.lastUpload).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'None'}
-                    </p>
-                  </div>
-                </div>
-              </div>
-
               {/* Upload Button - Highlighted */}
               <div className="relative group">
                 <div className="absolute -inset-0.5 bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 rounded-xl opacity-75 group-hover:opacity-100 blur transition-all duration-300 animate-pulse"></div>

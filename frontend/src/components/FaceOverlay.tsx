@@ -118,6 +118,26 @@ export default function FaceOverlay({ photoId }: Props) {
     }
   };
 
+  const untagFace = async (faceId: string) => {
+    const token = await getToken();
+    const res = await fetch(`${API}/api/people/untag`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ photoId, faceId }),
+    });
+    const data = await res.json();
+    if (data.success) {
+      // Reload faces and people
+      const r2 = await fetch(`${API}/api/people/faces/${photoId}`, { headers: { Authorization: `Bearer ${token}` } });
+      const d2 = await r2.json();
+      if (d2.success && d2.data) setFaces(d2.data.faces ?? []);
+      const r3 = await fetch(`${API}/api/people`, { headers: { Authorization: `Bearer ${token}` } });
+      const d3 = await r3.json();
+      if (d3.success) setPeople(d3.data);
+      setAssigning(null);
+    }
+  };
+
   if (!detected && !detecting && faces.length === 0) {
     return (
       <button
@@ -245,8 +265,16 @@ export default function FaceOverlay({ photoId }: Props) {
                   </div>
                 </div>
 
+                {face.personName && (
+                  <button
+                    className="mt-2 text-xs text-red-400 hover:text-red-600 w-full text-center border-t border-gray-100 pt-2"
+                    onClick={() => untagFace(face.faceId)}
+                  >
+                    ✕ Untag this person
+                  </button>
+                )}
                 <button
-                  className="mt-2 text-xs text-gray-400 hover:text-gray-600 w-full text-center"
+                  className="mt-1 text-xs text-gray-400 hover:text-gray-600 w-full text-center"
                   onClick={() => { setAssigning(null); setNewName(''); }}
                 >
                   Cancel

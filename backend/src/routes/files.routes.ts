@@ -4,6 +4,8 @@ import * as db from '../services/database.service';
 import { checkJwt } from '../middleware/auth.middleware';
 import { ensureUserMiddleware } from '../middleware/ensureUser.middleware';
 import { randomUUID } from 'crypto';
+import { detectAndIndexFaces } from '../services/rekognition.service';
+import { isHeic, convertHeicToJpeg } from '../services/heic.service';
 
 const router = express.Router();
 router.use(checkJwt);
@@ -130,7 +132,11 @@ router.post('/upload-url', async (req: Request, res: Response) => {
 
     res.json({
       success: true,
-      data: { ...uploadResult, photo: { id: photo.photoId, s3Key: photo.s3Key } },
+      data: {
+        ...uploadResult,
+        photo: { id: photo.photoId, s3Key: photo.s3Key },
+        needsConversion: isHeic(contentType, fileName),
+      },
     });
   } catch (error) {
     console.error('Error generating upload URL:', error);
@@ -149,6 +155,29 @@ router.get('/:id/download', async (req: Request, res: Response) => {
   } catch (error) {
     console.error('Error getting download URL:', error);
     res.status(500).json({ success: false, error: 'Failed to generate download URL' });
+  }
+});
+
+// POST /api/files/:id/convert — convert HEIC to JPEG after upload
+router.post('/:id/convert', async (req: Request, res: Response) => {
+  try {
+    const photo = await db.getPhotoById(req.params.id, req.user!.id);
+    if (!photo) return res.status(404).json({ success: false, error: 'Photo not found' });
+
+    if (!isHeic(photo.mimeType, photo.originalName)) {
+      return res.json({ success: true, data: photo, converted: false });
+    }
+
+    const { jpegS3Key, mimeType } = await convertHeicToJpeg(photo.s3Key);
+
+    // Update DB record to point to JPEG
+    await db.updatePhoto(photo.photoId, req.user!.id, { s3Key: jpegS3Key, mimeType });
+    const updated = await db.getPhotoById(photo.photoId, req.user!.id);
+
+    res.json({ success: true, data: updated, converted: true });
+  } catch (error) {
+    console.error('Error converting HEIC:', error);
+    res.status(500).json({ success: false, error: 'Failed to convert image' });
   }
 });
 

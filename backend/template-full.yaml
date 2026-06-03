@@ -26,6 +26,67 @@ Resources:
           AUTH0_DOMAIN: akhil-dev-app.us.auth0.com
           AUTH0_AUDIENCE: https://photovault-api.com
           FRONTEND_URL: https://akhilsailatchireddi.github.io/photo-vault
+          DYNAMODB_PEOPLE_TABLE: photovault-people-prod-v1
+          DYNAMODB_PHOTO_FACES_TABLE: photovault-photo-faces-prod-v1
+          REKOGNITION_COLLECTION_ID: photovault-faces-prod-v1
+          EVENTBRIDGE_BUS_NAME: photovault-events
+
+  # ── HEIC Conversion Lambda ───────────────────────────────────────────────────
+  HeicConvertFunction:
+    Type: AWS::Lambda::Function
+    DeletionPolicy: Retain
+    Properties:
+      FunctionName: photovault-heic-convert
+      Handler: dist/handlers/heic-convert-s3.handler
+      Runtime: nodejs22.x
+      Role: arn:aws:iam::278899968165:role/PhotoVaultLambdaRole
+      Timeout: 120
+      MemorySize: 1024
+      Code:
+        ZipFile: " "
+      Environment:
+        Variables:
+          NODE_ENV: production
+          S3_BUCKET_NAME: photovault-app-bucket-akhil
+          DYNAMODB_PHOTOS_TABLE: photovault-photos-prod-v1
+
+  HeicConvertS3Permission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt HeicConvertFunction.Arn
+      Action: lambda:InvokeFunction
+      Principal: s3.amazonaws.com
+      SourceArn: arn:aws:s3:::photovault-app-bucket-akhil
+
+  # ── Face Detection Lambda ────────────────────────────────────────────────────
+  FaceDetectFunction:
+    Type: AWS::Lambda::Function
+    DeletionPolicy: Retain
+    Properties:
+      FunctionName: photovault-face-detect
+      Handler: dist/handlers/face-detect-s3.handler
+      Runtime: nodejs22.x
+      Role: arn:aws:iam::278899968165:role/PhotoVaultLambdaRole
+      Timeout: 60
+      MemorySize: 256
+      Code:
+        ZipFile: " "
+      Environment:
+        Variables:
+          NODE_ENV: production
+          S3_BUCKET_NAME: photovault-app-bucket-akhil
+          DYNAMODB_PHOTOS_TABLE: photovault-photos-prod-v1
+          DYNAMODB_PEOPLE_TABLE: photovault-people-prod-v1
+          DYNAMODB_PHOTO_FACES_TABLE: photovault-photo-faces-prod-v1
+          REKOGNITION_COLLECTION_ID: photovault-faces-prod-v1
+
+  FaceDetectS3Permission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt FaceDetectFunction.Arn
+      Action: lambda:InvokeFunction
+      Principal: s3.amazonaws.com
+      SourceArn: arn:aws:s3:::photovault-app-bucket-akhil
 
   # ── API Gateway ──────────────────────────────────────────────────────────────
   PhotoVaultApi:
@@ -117,3 +178,92 @@ Resources:
               KeyType: HASH
           Projection:
             ProjectionType: ALL
+
+  # ── EventBridge Bus ─────────────────────────────────────────────────────────
+  PhotoVaultEventBus:
+    Type: AWS::Events::EventBus
+    Properties:
+      Name: photovault-events
+
+  # ── HEIC Convert EB Lambda ──────────────────────────────────────────────────
+  HeicConvertEBFunction:
+    Type: AWS::Lambda::Function
+    DeletionPolicy: Retain
+    Properties:
+      FunctionName: photovault-heic-convert-eb
+      Handler: dist/handlers/heic-convert-eb.handler
+      Runtime: nodejs22.x
+      Role: arn:aws:iam::278899968165:role/PhotoVaultLambdaRole
+      Timeout: 120
+      MemorySize: 1024
+      Code:
+        ZipFile: " "
+      Environment:
+        Variables:
+          NODE_ENV: production
+          S3_BUCKET_NAME: photovault-app-bucket-akhil
+          DYNAMODB_PHOTOS_TABLE: photovault-photos-prod-v1
+
+  HeicConvertEBRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: photovault-heic-convert-rule
+      EventBusName: !Ref PhotoVaultEventBus
+      EventPattern:
+        source: ["photovault.api"]
+        detail-type: ["heic.convert"]
+      State: ENABLED
+      Targets:
+        - Id: HeicConvertEBTarget
+          Arn: !GetAtt HeicConvertEBFunction.Arn
+
+  HeicConvertEBPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt HeicConvertEBFunction.Arn
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt HeicConvertEBRule.Arn
+
+  # ── Face Detect EB Lambda ───────────────────────────────────────────────────
+  FaceDetectEBFunction:
+    Type: AWS::Lambda::Function
+    DeletionPolicy: Retain
+    Properties:
+      FunctionName: photovault-face-detect-eb
+      Handler: dist/handlers/face-detect-eb.handler
+      Runtime: nodejs22.x
+      Role: arn:aws:iam::278899968165:role/PhotoVaultLambdaRole
+      Timeout: 60
+      MemorySize: 256
+      Code:
+        ZipFile: " "
+      Environment:
+        Variables:
+          NODE_ENV: production
+          S3_BUCKET_NAME: photovault-app-bucket-akhil
+          DYNAMODB_PHOTOS_TABLE: photovault-photos-prod-v1
+          DYNAMODB_PEOPLE_TABLE: photovault-people-prod-v1
+          DYNAMODB_PHOTO_FACES_TABLE: photovault-photo-faces-prod-v1
+          REKOGNITION_COLLECTION_ID: photovault-faces-prod-v1
+
+  FaceDetectEBRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: photovault-face-detect-rule
+      EventBusName: !Ref PhotoVaultEventBus
+      EventPattern:
+        source: ["photovault.api"]
+        detail-type: ["face.detect"]
+      State: ENABLED
+      Targets:
+        - Id: FaceDetectEBTarget
+          Arn: !GetAtt FaceDetectEBFunction.Arn
+
+  FaceDetectEBPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt FaceDetectEBFunction.Arn
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt FaceDetectEBRule.Arn

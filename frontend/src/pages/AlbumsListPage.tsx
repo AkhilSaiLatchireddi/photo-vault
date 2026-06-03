@@ -69,7 +69,7 @@ export default function AlbumsListPage() {
       setError(null);
       const response = await photoService.getAlbums();
       if (response.success) {
-        setAlbums(response.data);
+        setAlbums({ userAlbums: response.data?.userAlbums ?? [], sharedAlbums: response.data?.sharedAlbums ?? [] });
       } else {
         setError('Failed to fetch albums');
       }

@@ -1,7 +1,13 @@
 {
   "permissions": {
     "allow": [
-      "Bash(npm install *)"
+      "Bash(npm install *)",
+      "Bash(unset AWS_PROFILE)",
+      "Bash(unset AWS_DEFAULT_PROFILE)",
+      "Bash(aws logs *)",
+      "Bash(grep -v \"^$\")",
+      "Bash(npx tsc *)",
+      "Bash(npm run *)"
     ]
   }
 }

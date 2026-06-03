@@ -144,12 +144,38 @@ export async function getPhotoById(photoId: string, userId: string): Promise<Pho
   return item;
 }
 
+export async function getPhotoByS3Key(s3Key: string): Promise<Photo | null> {
+  // Scan with filter — s3Key is unique but not the primary key
+  const res = await db.send(new ScanCommand({
+    TableName: TABLE.PHOTOS,
+    FilterExpression: 's3Key = :key',
+    ExpressionAttributeValues: { ':key': s3Key },
+  }));
+  return (res.Items?.[0] as Photo) ?? null;
+}
+
 export async function getPhotosByIds(photoIds: string[]): Promise<Photo[]> {
   if (photoIds.length === 0) return [];
   const results = await Promise.all(
     photoIds.map(id => db.send(new GetCommand({ TableName: TABLE.PHOTOS, Key: { photoId: id } })))
   );
   return results.map(r => r.Item).filter(Boolean) as Photo[];
+}
+
+export async function updatePhoto(photoId: string, userId: string, patch: Partial<Pick<Photo, 's3Key' | 'mimeType' | 'width' | 'height'>>): Promise<void> {
+  const existing = await getPhotoById(photoId, userId);
+  if (!existing) return;
+  const merged = { ...patch, updatedAt: new Date().toISOString() };
+  const sets = Object.keys(merged).map((k, i) => `#f${i} = :v${i}`).join(', ');
+  const names = Object.fromEntries(Object.keys(merged).map((k, i) => [`#f${i}`, k]));
+  const values = Object.fromEntries(Object.keys(merged).map((k, i) => [`:v${i}`, (merged as any)[k]]));
+  await db.send(new UpdateCommand({
+    TableName: TABLE.PHOTOS,
+    Key: { photoId },
+    UpdateExpression: `SET ${sets}`,
+    ExpressionAttributeNames: names,
+    ExpressionAttributeValues: values,
+  }));
 }
 
 export async function deletePhoto(photoId: string, userId: string): Promise<boolean> {
@@ -336,4 +362,106 @@ export async function shareAlbum(albumId: string, ownerId: string, share: { emai
     ExpressionAttributeValues: { ':sw': updated, ':now': new Date().toISOString() },
   }));
   return true;
+}
+
+// ─── People ───────────────────────────────────────────────────────────────────
+
+const TABLE_PEOPLE  = process.env.DYNAMODB_PEOPLE_TABLE      || 'photovault-people-prod-v1';
+const TABLE_FACES   = process.env.DYNAMODB_PHOTO_FACES_TABLE || 'photovault-photo-faces-prod-v1';
+
+export interface Person {
+  personId: string;
+  userId: string;
+  name: string;
+  faceIds: string[];
+  coverFaceS3Key?: string;
+  coverBoundingBox?: { left: number; top: number; width: number; height: number };
+  photoCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PhotoFace {
+  photoId: string;
+  userId: string;
+  faces: {
+    faceId: string;
+    personId?: string;
+    boundingBox: { left: number; top: number; width: number; height: number };
+    confidence: number;
+  }[];
+  processedAt: string;
+}
+
+export async function createPerson(data: Pick<Person, 'userId' | 'name' | 'faceIds' | 'coverFaceS3Key' | 'coverBoundingBox'>): Promise<Person> {
+  const now = new Date().toISOString();
+  const person: Person = { personId: randomUUID(), photoCount: 0, createdAt: now, updatedAt: now, ...data, faceIds: data.faceIds ?? [] };
+  await db.send(new PutCommand({ TableName: TABLE_PEOPLE, Item: person }));
+  return person;
+}
+
+export async function getPeopleByUserId(userId: string): Promise<Person[]> {
+  const res = await db.send(new QueryCommand({ TableName: TABLE_PEOPLE, IndexName: 'userId-index', KeyConditionExpression: 'userId = :uid', ExpressionAttributeValues: { ':uid': userId } }));
+  return (res.Items ?? []) as Person[];
+}
+
+export async function getPersonById(personId: string): Promise<Person | null> {
+  const res = await db.send(new GetCommand({ TableName: TABLE_PEOPLE, Key: { personId } }));
+  return (res.Item as Person) ?? null;
+}
+
+export async function updatePerson(personId: string, patch: Partial<Pick<Person, 'name' | 'faceIds' | 'coverFaceS3Key' | 'coverBoundingBox' | 'photoCount'>>): Promise<Person | null> {
+  const merged = { ...patch, updatedAt: new Date().toISOString() };
+  const sets = Object.keys(merged).map((k, i) => `#f${i} = :v${i}`).join(', ');
+  const names = Object.fromEntries(Object.keys(merged).map((k, i) => [`#f${i}`, k]));
+  const values = Object.fromEntries(Object.keys(merged).map((k, i) => [`:v${i}`, (merged as any)[k]]));
+  const res = await db.send(new UpdateCommand({ TableName: TABLE_PEOPLE, Key: { personId }, UpdateExpression: `SET ${sets}`, ExpressionAttributeNames: names, ExpressionAttributeValues: values, ReturnValues: 'ALL_NEW' }));
+  return res.Attributes as Person ?? null;
+}
+
+export async function deletePerson(personId: string): Promise<void> {
+  await db.send(new DeleteCommand({ TableName: TABLE_PEOPLE, Key: { personId } }));
+}
+
+export async function getPersonByFaceId(faceId: string, userId: string): Promise<Person | null> {
+  const people = await getPeopleByUserId(userId);
+  return people.find(p => p.faceIds.includes(faceId)) ?? null;
+}
+
+// ─── Photo Faces ──────────────────────────────────────────────────────────────
+
+export async function savePhotoFaces(photoId: string, userId: string, faces: PhotoFace['faces']): Promise<PhotoFace> {
+  // personIds is a top-level string set so the personId-index GSI can index it
+  const personIds = [...new Set(faces.map(f => f.personId).filter(Boolean) as string[])];
+  const record: any = { photoId, userId, faces, processedAt: new Date().toISOString() };
+  if (personIds.length > 0) {
+    // Store each unique personId as separate top-level attributes for GSI
+    record.personId = personIds[0]; // primary — GSI partition key
+    record.personIds = personIds;   // all person IDs for scan-based lookup
+  }
+  await db.send(new PutCommand({ TableName: TABLE_FACES, Item: record }));
+  return record as PhotoFace;
+}
+
+export async function getPhotoFaces(photoId: string): Promise<PhotoFace | null> {
+  const res = await db.send(new GetCommand({ TableName: TABLE_FACES, Key: { photoId } }));
+  return (res.Item as PhotoFace) ?? null;
+}
+
+export async function updatePhotoFacePersonId(photoId: string, faceId: string, personId: string): Promise<void> {
+  const existing = await getPhotoFaces(photoId);
+  if (!existing) return;
+  const updatedFaces = existing.faces.map(f => f.faceId === faceId ? { ...f, personId } : f);
+  await db.send(new UpdateCommand({ TableName: TABLE_FACES, Key: { photoId }, UpdateExpression: 'SET faces = :f', ExpressionAttributeValues: { ':f': updatedFaces } }));
+}
+
+export async function getPhotosByPersonId(personId: string): Promise<string[]> {
+  // Scan photo-faces table filtering by personIds list attribute
+  // This works reliably regardless of GSI indexing of nested attributes
+  const res = await db.send(new ScanCommand({
+    TableName: TABLE_FACES,
+    FilterExpression: 'contains(personIds, :pid)',
+    ExpressionAttributeValues: { ':pid': personId },
+  }));
+  return (res.Items ?? []).map((item: any) => item.photoId as string);
 }

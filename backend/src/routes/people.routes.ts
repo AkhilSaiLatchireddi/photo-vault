@@ -132,12 +132,14 @@ router.post('/detect/:photoId', async (req: Request, res: Response) => {
     for (const face of faces) {
       if (!face.faceId) continue;
 
-      // Check if this faceId already belongs to a person
-      let person = existingPeople.find(p => p.faceIds.includes(face.faceId!));
+      // All faceIds to check: own faceId + all similar faces from Rekognition
+      const lookupIds = [face.faceId, ...(face.similarFaceIds ?? [])];
+      // Find the FIRST existing person that has any of these faceIds
+      let person = existingPeople.find(p => lookupIds.some(id => p.faceIds.includes(id)));
 
       if (!person) {
-        // New person — create with auto-name
-        const autoName = `Person ${existingPeople.length + faceRecords.filter(f => !f.personId).length + 1}`;
+        // Genuinely new person — create with auto-name
+        const autoName = `Person ${existingPeople.length + 1}`;
         person = await db.createPerson({
           userId,
           name: autoName,
@@ -147,7 +149,7 @@ router.post('/detect/:photoId', async (req: Request, res: Response) => {
         });
         existingPeople.push(person);
       } else {
-        // Add faceId to existing person if not already there
+        // Known person — add new faceId to their record if not already there
         if (!person.faceIds.includes(face.faceId)) {
           const updatedFaceIds = [...person.faceIds, face.faceId];
           await db.updatePerson(person.personId, { faceIds: updatedFaceIds });
@@ -155,7 +157,6 @@ router.post('/detect/:photoId', async (req: Request, res: Response) => {
         }
       }
 
-      // Update photo count
       await db.updatePerson(person.personId, { photoCount: person.photoCount + 1 });
 
       faceRecords.push({
@@ -248,6 +249,209 @@ router.post('/assign', async (req: Request, res: Response) => {
   } catch (error) {
     console.error('Error assigning face:', error);
     res.status(500).json({ success: false, error: 'Failed to assign face' });
+  }
+});
+
+// POST /api/people/scan-all — detect faces on all unprocessed photos for this user
+router.post('/scan-all', async (req: Request, res: Response) => {
+  try {
+    const userId = req.user!.id;
+    console.log('scan-all userId:', userId);
+    const { photos } = await db.getUserPhotos(userId, 200);
+    console.log('scan-all photos found:', photos.length);
+
+    let processed = 0;
+    let skipped = 0;
+    const errors: string[] = [];
+
+    for (const photo of photos) {
+      console.log('Processing photo:', photo.photoId, 'mime:', photo.mimeType);
+      // Skip non-images
+      if (!photo.mimeType.startsWith('image/')) { skipped++; console.log('Skipped - not image'); continue; }
+
+      // Skip if already processed (unless force flag)
+      const existing = await db.getPhotoFaces(photo.photoId);
+      console.log('Existing faces:', existing ? 'yes' : 'no', 'force:', req.query.force);
+      if (existing && !req.query.force) { skipped++; console.log('Skipped - already processed'); continue; }
+
+      try {
+        const { faces } = await detectAndIndexFaces(photo.s3Key);
+        const existingPeople = await db.getPeopleByUserId(userId);
+        const faceRecords: db.PhotoFace['faces'] = [];
+
+        for (const face of faces) {
+          if (!face.faceId) continue;
+          const lookupIds = [face.faceId, ...(face.similarFaceIds ?? [])];
+          let person = existingPeople.find(p => lookupIds.some(id => p.faceIds.includes(id)));
+          console.log('scan-all person found:', person?.personId ?? 'none');
+          if (!person) {
+            const autoName = `Person ${existingPeople.length + 1}`;
+            person = await db.createPerson({
+              userId, name: autoName, faceIds: [face.faceId],
+              coverFaceS3Key: photo.s3Key, coverBoundingBox: face.boundingBox,
+            });
+            existingPeople.push(person);
+          } else if (!person.faceIds.includes(face.faceId)) {
+            const updated = [...person.faceIds, face.faceId];
+            await db.updatePerson(person.personId, { faceIds: updated });
+            person.faceIds = updated;
+          }
+          await db.updatePerson(person.personId, { photoCount: person.photoCount + 1 });
+          faceRecords.push({ faceId: face.faceId, personId: person.personId, boundingBox: face.boundingBox, confidence: face.confidence });
+        }
+
+        await db.savePhotoFaces(photo.photoId, userId, faceRecords);
+        processed++;
+      } catch (e) {
+        console.error('Error processing photo', photo.photoId, ':', e instanceof Error ? e.message : String(e));
+        errors.push(photo.photoId);
+      }
+    }
+
+    // Post-scan dedup: merge people whose faceIds are all similar to each other
+    // This fixes any split-person issues from parallel processing
+    let merged = 0;
+    try {
+      const allPeople = await db.getPeopleByUserId(userId);
+      const seen = new Set<string>();
+
+      for (const person of allPeople) {
+        if (seen.has(person.personId)) continue;
+        {
+          // Find all other people whose faceIds overlap with this person's faceIds
+          const duplicates = allPeople.filter(p =>
+            p.personId !== person.personId &&
+            !seen.has(p.personId) &&
+            p.faceIds.some(f => person.faceIds.includes(f))
+          );
+          for (const dup of duplicates) {
+            // Merge dup into person
+            const mergedFaceIds = [...new Set([...person.faceIds, ...dup.faceIds])];
+            await db.updatePerson(person.personId, {
+              faceIds: mergedFaceIds,
+              photoCount: person.photoCount + dup.photoCount,
+            });
+            person.faceIds = mergedFaceIds;
+            person.photoCount += dup.photoCount;
+            const dupPhotoIds = await db.getPhotosByPersonId(dup.personId);
+            for (const photoId of dupPhotoIds) {
+              const faces = await db.getPhotoFaces(photoId);
+              if (!faces) continue;
+              const updated = faces.faces.map((f: any) => f.personId === dup.personId ? { ...f, personId: person.personId } : f);
+              await db.savePhotoFaces(photoId, userId, updated);
+            }
+            await db.deletePerson(dup.personId);
+            seen.add(dup.personId);
+            merged++;
+          }
+        }
+      }
+    } catch (e) {
+      console.error('Dedup error:', e);
+    }
+
+    res.json({ success: true, data: { processed, skipped, errors: errors.length, merged } });
+  } catch (error) {
+    console.error('Error scanning all photos:', error);
+    res.status(500).json({ success: false, error: 'Failed to scan photos' });
+  }
+});
+
+// POST /api/people/untag — remove a face assignment from a photo, making it a new unnamed person
+router.post('/untag', async (req: Request, res: Response) => {
+  try {
+    const { photoId, faceId } = req.body;
+    if (!photoId || !faceId) {
+      return res.status(400).json({ success: false, error: 'photoId and faceId required' });
+    }
+
+    const userId = req.user!.id;
+    const photo = await db.getPhotoById(photoId, userId);
+    if (!photo) return res.status(404).json({ success: false, error: 'Photo not found' });
+
+    const photoFaces = await db.getPhotoFaces(photoId);
+    if (!photoFaces) return res.status(404).json({ success: false, error: 'No face data for this photo' });
+
+    const face = photoFaces.faces.find(f => f.faceId === faceId);
+    if (!face) return res.status(404).json({ success: false, error: 'Face not found in photo' });
+
+    const oldPersonId = face.personId;
+
+    // Create a new unnamed person for this face
+    const newPerson = await db.createPerson({
+      userId,
+      name: 'Unknown Person',
+      faceIds: [faceId],
+      coverFaceS3Key: photo.s3Key,
+      coverBoundingBox: face.boundingBox,
+    });
+
+    // Update this face in the photo to point to the new person
+    await db.updatePhotoFacePersonId(photoId, faceId, newPerson.personId);
+
+    // Remove faceId from old person's faceIds
+    if (oldPersonId) {
+      const oldPerson = await db.getPersonById(oldPersonId);
+      if (oldPerson && oldPerson.userId === userId) {
+        const updatedFaceIds = oldPerson.faceIds.filter(f => f !== faceId);
+        if (updatedFaceIds.length === 0) {
+          // Old person has no more faces — delete them
+          await db.deletePerson(oldPersonId);
+        } else {
+          await db.updatePerson(oldPersonId, {
+            faceIds: updatedFaceIds,
+            photoCount: Math.max(0, oldPerson.photoCount - 1),
+          });
+        }
+      }
+    }
+
+    res.json({ success: true, data: { newPersonId: newPerson.personId } });
+  } catch (error) {
+    console.error('Error untagging face:', error);
+    res.status(500).json({ success: false, error: 'Failed to untag face' });
+  }
+});
+
+// POST /api/people/merge — merge two people into one
+router.post('/merge', async (req: Request, res: Response) => {
+  try {
+    const { keepPersonId, mergePersonId } = req.body;
+    if (!keepPersonId || !mergePersonId) {
+      return res.status(400).json({ success: false, error: 'keepPersonId and mergePersonId required' });
+    }
+
+    const userId = req.user!.id;
+    const keepPerson = await db.getPersonById(keepPersonId);
+    const mergePerson = await db.getPersonById(mergePersonId);
+
+    if (!keepPerson || keepPerson.userId !== userId || !mergePerson || mergePerson.userId !== userId) {
+      return res.status(404).json({ success: false, error: 'One or both people not found' });
+    }
+
+    // Merge faceIds from both people into the keeper
+    const mergedFaceIds = [...new Set([...keepPerson.faceIds, ...mergePerson.faceIds])];
+    await db.updatePerson(keepPersonId, {
+      faceIds: mergedFaceIds,
+      photoCount: keepPerson.photoCount + mergePerson.photoCount,
+    });
+
+    // Update all photo-faces records that reference the merged person
+    const mergePhotoIds = await db.getPhotosByPersonId(mergePersonId);
+    for (const photoId of mergePhotoIds) {
+      const faces = await db.getPhotoFaces(photoId);
+      if (!faces) continue;
+      const updated = faces.faces.map(f => f.personId === mergePersonId ? { ...f, personId: keepPersonId } : f);
+      await db.savePhotoFaces(photoId, userId, updated);
+    }
+
+    // Delete the merged person
+    await db.deletePerson(mergePersonId);
+
+    res.json({ success: true, message: `Merged into ${keepPerson.name}` });
+  } catch (error) {
+    console.error('Error merging people:', error);
+    res.status(500).json({ success: false, error: 'Failed to merge people' });
   }
 });
 
