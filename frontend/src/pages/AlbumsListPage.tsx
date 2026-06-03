@@ -18,6 +18,8 @@ interface Album {
   title: string;
   description?: string;
   photoIds: string[];
+  coverPhotoId?: string;
+  coverUrl?: string;
   isPublic: boolean;
   publicToken?: string;
   publicExpiresAt?: string;
@@ -243,9 +245,12 @@ export default function AlbumsListPage() {
                 key={album.albumId} 
                 className="group bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-xl transition-all duration-300 hover:-translate-y-1 hover:border-indigo-200"
               >
-                {/* Album Header with Gradient */}
-                <div className="bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 h-32 relative">
-                  <div className="absolute inset-0 bg-black/20 group-hover:bg-black/10 transition-all"></div>
+                {/* Album Header — cover photo or gradient fallback */}
+                <div className="h-32 relative overflow-hidden bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500">
+                  {album.coverUrl && (
+                    <img src={album.coverUrl} alt={album.title} className="absolute inset-0 w-full h-full object-cover" loading="lazy" />
+                  )}
+                  <div className="absolute inset-0 bg-black/30 group-hover:bg-black/20 transition-all"></div>
                   <div className="absolute bottom-3 left-4 right-4">
                     <div className="flex items-center gap-2">
                       {album.isPublic && (

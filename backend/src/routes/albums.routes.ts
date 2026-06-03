@@ -13,7 +13,28 @@ router.get('/', async (req: Request, res: Response) => {
   try {
     const userId = req.user!.id;
     const userAlbums = await db.getUserAlbums(userId);
-    res.json({ success: true, data: { userAlbums } });
+
+    // Resolve cover photo URLs and auto-assign cover from first photo if not set
+    const albumsWithCovers = await Promise.all(userAlbums.map(async album => {
+      // Auto-pick first photo as cover if none set
+      let coverPhotoId = album.coverPhotoId;
+      if (!coverPhotoId && album.photoIds.length > 0) {
+        coverPhotoId = album.photoIds[0];
+      }
+      if (!coverPhotoId) return { ...album, coverUrl: null };
+
+      try {
+        const photo = await db.getPhotoById(coverPhotoId, userId);
+        if (!photo) return { ...album, coverUrl: null };
+        const key = photo.thumbnailS3Key ?? photo.s3Key;
+        const { url } = await s3Service.getObjectUrl(key, 7200);
+        return { ...album, coverPhotoId, coverUrl: url };
+      } catch {
+        return { ...album, coverUrl: null };
+      }
+    }));
+
+    res.json({ success: true, data: { userAlbums: albumsWithCovers } });
   } catch (error) {
     console.error('Error fetching albums:', error);
     res.status(500).json({ success: false, error: 'Failed to fetch albums' });

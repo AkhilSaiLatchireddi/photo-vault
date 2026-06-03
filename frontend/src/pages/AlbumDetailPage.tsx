@@ -271,6 +271,16 @@ export default function AlbumDetailPage() {
       setAddingPhotos(false);
     }
   };
+  const setAlbumCover = async (photoId: string) => {
+    if (!albumId) return;
+    try {
+      await photoService.updateAlbum(albumId, { coverPhotoId: photoId });
+      await fetchAlbum();
+    } catch (e) {
+      console.error('Error setting cover:', e);
+    }
+  };
+
   const removePhotoFromAlbum = async (photoId: string) => {
     if (!album) return;
     if (!confirm('Remove this photo from the album?')) return;
@@ -465,7 +475,16 @@ export default function AlbumDetailPage() {
                           </div>
                         )}
                       </div>
-                      <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                      <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex gap-1.5">
+                        {photo.mimeType?.startsWith('image/') && (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); setAlbumCover(photo.photoId as string); }}
+                            className="bg-yellow-500/90 backdrop-blur-sm text-white p-2 rounded-full hover:bg-yellow-600"
+                            title="Set as album cover"
+                          >
+                            <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+                          </button>
+                        )}
                         <button onClick={(e) => { e.stopPropagation(); removePhotoFromAlbum(photo.photoId as string); }} className="bg-red-500/80 backdrop-blur-sm text-white p-2 rounded-full hover:bg-red-600" title="Remove from album">
                           <Trash2 className="h-4 w-4" />
                         </button>

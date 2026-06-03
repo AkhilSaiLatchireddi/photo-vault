@@ -62,6 +62,7 @@ export default function UserProfileComponent() {
   const [interests, setInterests] = useState<string[]>([]);
   const [theme, setTheme] = useState<'light' | 'dark' | 'auto'>('auto');
   const [privacy, setPrivacy] = useState<'public' | 'private' | 'friends'>('public');
+  const [avatarUploading, setAvatarUploading] = useState(false);
   
   // Social Links
   const [twitter, setTwitter] = useState('');
@@ -167,6 +168,68 @@ export default function UserProfileComponent() {
     }
   };
 
+  // Upload profile picture
+  const uploadAvatar = async (file: File) => {
+    if (!file.type.startsWith('image/')) return;
+    setAvatarUploading(true);
+    setError(null);
+    try {
+      const token = await getToken();
+      if (!token) throw new Error('No auth token');
+
+      // 1. Get presigned upload URL
+      const urlRes = await fetch(`${API_BASE_URL}/api/profile/avatar`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      });
+      const urlData = await urlRes.json();
+      if (!urlData.success) throw new Error(urlData.error);
+
+      // 2. Resize to max 400px using canvas before upload
+      const resized = await new Promise<Blob>((resolve, reject) => {
+        const img = document.createElement('img');
+        const objUrl = URL.createObjectURL(file);
+        img.onload = () => {
+          URL.revokeObjectURL(objUrl);
+          const size = Math.min(img.naturalWidth, img.naturalHeight, 400);
+          const canvas = document.createElement('canvas');
+          canvas.width = size; canvas.height = size;
+          const ctx = canvas.getContext('2d')!;
+          // Centre-crop to square
+          const sx = (img.naturalWidth - size) / 2;
+          const sy = (img.naturalHeight - size) / 2;
+          ctx.drawImage(img, sx, sy, size, size, 0, 0, size, size);
+          canvas.toBlob(b => b ? resolve(b) : reject(new Error('canvas error')), 'image/jpeg', 0.9);
+        };
+        img.onerror = reject;
+        img.src = objUrl;
+      });
+
+      // 3. Upload to S3
+      await fetch(urlData.data.uploadUrl, {
+        method: 'PUT',
+        body: resized,
+        headers: { 'Content-Type': 'image/jpeg' },
+      });
+
+      // 4. Save key → backend returns fresh presigned picture URL
+      const saveRes = await fetch(`${API_BASE_URL}/api/profile/avatar`, {
+        method: 'PATCH',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ s3Key: urlData.data.s3Key }),
+      });
+      const saveData = await saveRes.json();
+      if (saveData.success) {
+        setProfile(prev => prev ? { ...prev, picture: saveData.data.picture } : prev);
+      }
+    } catch (err) {
+      setError('Failed to upload profile picture');
+      console.error(err);
+    } finally {
+      setAvatarUploading(false);
+    }
+  };
+
   // Update profile
   const updateProfile = async () => {
     setSaving(true);
@@ -268,19 +331,29 @@ export default function UserProfileComponent() {
           <div className="flex items-center">
             <div className="relative">
               {profile.picture ? (
-                <img 
-                  src={profile.picture} 
-                  alt="Profile" 
-                  className="h-20 w-20 rounded-full object-cover"
+                <img
+                  src={profile.picture}
+                  alt="Profile"
+                  className="h-20 w-20 rounded-full object-cover ring-4 ring-blue-100"
                 />
               ) : (
                 <div className="h-20 w-20 bg-blue-100 rounded-full flex items-center justify-center">
                   <User className="h-8 w-8 text-blue-600" />
                 </div>
               )}
-              <button className="absolute bottom-0 right-0 bg-blue-600 text-white p-2 rounded-full hover:bg-blue-700 transition-colors">
-                <Camera className="h-4 w-4" />
-              </button>
+              <label className={`absolute bottom-0 right-0 p-2 rounded-full cursor-pointer transition-colors shadow-md ${avatarUploading ? 'bg-gray-400' : 'bg-blue-600 hover:bg-blue-700'} text-white`} title="Change profile picture">
+                {avatarUploading
+                  ? <div className="h-4 w-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  : <Camera className="h-4 w-4" />
+                }
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  disabled={avatarUploading}
+                  onChange={e => { const f = e.target.files?.[0]; if (f) uploadAvatar(f); e.target.value = ''; }}
+                />
+              </label>
             </div>
             <div className="ml-6">
               <h1 className="text-2xl font-bold text-gray-900">

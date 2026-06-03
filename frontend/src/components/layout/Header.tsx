@@ -1,17 +1,33 @@
 import { useAuth0 } from '@auth0/auth0-react';
 import { Link, useLocation } from 'react-router-dom';
-import { Camera, Grid, User, LogOut, Home, HelpCircle, Users } from 'lucide-react';
-import { useState } from 'react';
+import { Grid, User, LogOut, Home, HelpCircle, Users } from 'lucide-react';
+import { useState, useEffect } from 'react';
 import { photoService } from '../../services/photoService';
+import { config } from '../../config/env';
 
 interface HeaderProps {
   showNavigation?: boolean;
 }
 
+const API_BASE_URL = config.API_BASE_URL || import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+
 export default function Header({ showNavigation = true }: HeaderProps) {
-  const { user, logout } = useAuth0();
+  const { user, logout, getAccessTokenSilently } = useAuth0();
   const location = useLocation();
   const [showHelp, setShowHelp] = useState(false);
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+
+  // Fetch the DB profile picture (may differ from Auth0's picture after user uploads own avatar)
+  useEffect(() => {
+    const audience = import.meta.env.VITE_AUTH0_AUDIENCE;
+    getAccessTokenSilently({ authorizationParams: audience ? { audience } : {} })
+      .then(token =>
+        fetch(`${API_BASE_URL}/api/profile`, { headers: { Authorization: `Bearer ${token}` } })
+      )
+      .then(r => r.json())
+      .then(d => { if (d?.data?.picture) setAvatarUrl(d.data.picture); })
+      .catch(() => {});
+  }, []);
 
   const handleLogout = () => {
     photoService.clearAllCaches();
@@ -37,8 +53,18 @@ export default function Header({ showNavigation = true }: HeaderProps) {
       <div className="max-w-7xl mx-auto px-6 py-4">
         <div className="flex items-center justify-between">
           <Link to="/" className="flex items-center group">
-            <div className="bg-white p-2 rounded-lg shadow-md group-hover:shadow-xl transition-all mr-3">
-              <Camera className="h-7 w-7 text-indigo-600" />
+            <div className="mr-3 ring-2 ring-white/50 group-hover:ring-white rounded-full transition-all shadow-md">
+              {avatarUrl || user?.picture ? (
+                <img
+                  src={avatarUrl ?? user?.picture}
+                  alt="avatar"
+                  className="h-10 w-10 rounded-full object-cover"
+                />
+              ) : (
+                <div className="h-10 w-10 bg-white rounded-full flex items-center justify-center">
+                  <User className="h-5 w-5 text-indigo-600" />
+                </div>
+              )}
             </div>
             <div>
               <h1 className="text-2xl font-bold text-white tracking-tight">PhotoVault</h1>
