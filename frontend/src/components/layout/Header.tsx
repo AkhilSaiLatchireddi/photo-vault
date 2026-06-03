@@ -58,6 +58,7 @@ export default function Header({ showNavigation = true }: HeaderProps) {
                 <img
                   src={avatarUrl ?? user?.picture}
                   alt="avatar"
+                  crossOrigin="anonymous"
                   className="h-10 w-10 rounded-full object-cover"
                 />
               ) : (

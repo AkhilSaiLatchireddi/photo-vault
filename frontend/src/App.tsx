@@ -34,9 +34,9 @@ const LoadingFallback = () => (
 );
 
 const App = () => {
-  const { isLoading, error, isAuthenticated, getAccessTokenSilently } = useAuth0();
+  const { isLoading, error, isAuthenticated, getAccessTokenSilently, user } = useAuth0();
 
-  // Initialize photo service with Auth0 token getter
+  // Initialize photo service with Auth0 token getter + userId so cache is scoped per user
   useEffect(() => {
     const getToken = async () => {
       try {
@@ -52,8 +52,8 @@ const App = () => {
       }
     };
 
-    photoService.initialize(getToken);
-  }, [getAccessTokenSilently]);
+    photoService.initialize(getToken, user?.sub ?? undefined);
+  }, [getAccessTokenSilently, user?.sub]);
 
   if (error) {
     return (

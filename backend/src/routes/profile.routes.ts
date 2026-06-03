@@ -71,9 +71,15 @@ router.patch('/avatar', checkJwt, ensureUserMiddleware, async (req: Request, res
   try {
     const { s3Key } = req.body;
     if (!s3Key) return res.status(400).json({ success: false, error: 's3Key required' });
-    // Store a presigned URL valid 7 days as the picture field (refreshed on each profile fetch)
+
     const { url } = await s3Service.getObjectUrl(s3Key, 7 * 24 * 3600);
-    await db.updateUser(req.user!.id, { picture: url, profile: { avatarS3Key: s3Key } as any });
+
+    // Fetch existing user so we can merge avatarS3Key into the existing profile
+    // without wiping firstName, bio, location, etc.
+    const existing = await db.getUserById(req.user!.id);
+    const mergedProfile = { ...(existing?.profile ?? {}), avatarS3Key: s3Key };
+
+    await db.updateUser(req.user!.id, { picture: url, profile: mergedProfile as any });
     res.json({ success: true, data: { picture: url } });
   } catch (error) {
     console.error('Error saving avatar:', error);

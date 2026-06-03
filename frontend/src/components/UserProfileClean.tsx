@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth0 } from '@auth0/auth0-react';
-import { User, Settings, Save, Camera, MapPin, Globe, Phone, Briefcase, Heart, Calendar, Users, Twitter, Instagram, Linkedin, Github, Bell } from 'lucide-react';
+import { User, Settings, Save, Camera, MapPin, Globe, Phone, Briefcase, Heart, Calendar, Users, Twitter, Instagram, Linkedin, Github, Bell, ZoomIn, ZoomOut, Check, X } from 'lucide-react';
 
 // Debug logging setup
 const DEBUG = import.meta.env.VITE_DEBUG === 'true';
@@ -63,6 +63,15 @@ export default function UserProfileComponent() {
   const [theme, setTheme] = useState<'light' | 'dark' | 'auto'>('auto');
   const [privacy, setPrivacy] = useState<'public' | 'private' | 'friends'>('public');
   const [avatarUploading, setAvatarUploading] = useState(false);
+  // Crop modal state
+  const [, setCropFile] = useState<File | null>(null);
+  const [cropImageUrl, setCropImageUrl] = useState<string | null>(null);
+  const [cropOffset, setCropOffset] = useState({ x: 0, y: 0 });
+  const [cropZoom, setCropZoom] = useState(1);
+  const cropCanvasRef = useRef<HTMLCanvasElement>(null);
+  const cropImgRef = useRef<HTMLImageElement | null>(null);
+  const cropDragging = useRef(false);
+  const cropDragStart = useRef({ x: 0, y: 0 });
   
   // Social Links
   const [twitter, setTwitter] = useState('');
@@ -168,16 +177,85 @@ export default function UserProfileComponent() {
     }
   };
 
-  // Upload profile picture
-  const uploadAvatar = async (file: File) => {
+  // Step 1 — file picked: show crop modal
+  const openCropModal = (file: File) => {
     if (!file.type.startsWith('image/')) return;
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      cropImgRef.current = img;
+      setCropOffset({ x: 0, y: 0 });
+      setCropZoom(1);
+      setCropImageUrl(url);
+      setCropFile(file);
+    };
+    img.src = url;
+  };
+
+  // Draw the crop preview on the canvas
+  const CROP_SIZE = 300; // canvas px
+  const drawCrop = useCallback(() => {
+    const canvas = cropCanvasRef.current;
+    const img = cropImgRef.current;
+    if (!canvas || !img) return;
+    const ctx = canvas.getContext('2d')!;
+    ctx.clearRect(0, 0, CROP_SIZE, CROP_SIZE);
+
+    // The image is drawn scaled by cropZoom, offset by cropOffset
+    const drawW = img.naturalWidth * cropZoom;
+    const drawH = img.naturalHeight * cropZoom;
+    ctx.drawImage(img, cropOffset.x, cropOffset.y, drawW, drawH);
+
+    // Circle mask overlay
+    ctx.save();
+    ctx.globalCompositeOperation = 'destination-in';
+    ctx.beginPath();
+    ctx.arc(CROP_SIZE / 2, CROP_SIZE / 2, CROP_SIZE / 2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }, [cropOffset, cropZoom]);
+
+  useEffect(() => { if (cropImageUrl) drawCrop(); }, [cropImageUrl, cropOffset, cropZoom, drawCrop]);
+
+  // Drag handlers
+  const onCropMouseDown = (e: React.MouseEvent) => {
+    cropDragging.current = true;
+    cropDragStart.current = { x: e.clientX - cropOffset.x, y: e.clientY - cropOffset.y };
+  };
+  const onCropMouseMove = (e: React.MouseEvent) => {
+    if (!cropDragging.current) return;
+    setCropOffset({ x: e.clientX - cropDragStart.current.x, y: e.clientY - cropDragStart.current.y });
+  };
+  const onCropMouseUp = () => { cropDragging.current = false; };
+  const onCropTouchStart = (e: React.TouchEvent) => {
+    cropDragging.current = true;
+    cropDragStart.current = { x: e.touches[0].clientX - cropOffset.x, y: e.touches[0].clientY - cropOffset.y };
+  };
+  const onCropTouchMove = (e: React.TouchEvent) => {
+    if (!cropDragging.current) return;
+    setCropOffset({ x: e.touches[0].clientX - cropDragStart.current.x, y: e.touches[0].clientY - cropDragStart.current.y });
+  };
+
+  const closeCropModal = () => {
+    if (cropImageUrl) URL.revokeObjectURL(cropImageUrl);
+    setCropFile(null); setCropImageUrl(null);
+  };
+
+  // Step 2 — confirm crop: get canvas pixels and upload
+  const confirmCropAndUpload = async () => {
+    const canvas = cropCanvasRef.current;
+    if (!canvas) return;
     setAvatarUploading(true);
+    closeCropModal();
     setError(null);
     try {
+      const blob = await new Promise<Blob>((res, rej) =>
+        canvas.toBlob(b => b ? res(b) : rej(new Error('canvas error')), 'image/jpeg', 0.92)
+      );
+
       const token = await getToken();
       if (!token) throw new Error('No auth token');
 
-      // 1. Get presigned upload URL
       const urlRes = await fetch(`${API_BASE_URL}/api/profile/avatar`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
@@ -185,34 +263,10 @@ export default function UserProfileComponent() {
       const urlData = await urlRes.json();
       if (!urlData.success) throw new Error(urlData.error);
 
-      // 2. Resize to max 400px using canvas before upload
-      const resized = await new Promise<Blob>((resolve, reject) => {
-        const img = document.createElement('img');
-        const objUrl = URL.createObjectURL(file);
-        img.onload = () => {
-          URL.revokeObjectURL(objUrl);
-          const size = Math.min(img.naturalWidth, img.naturalHeight, 400);
-          const canvas = document.createElement('canvas');
-          canvas.width = size; canvas.height = size;
-          const ctx = canvas.getContext('2d')!;
-          // Centre-crop to square
-          const sx = (img.naturalWidth - size) / 2;
-          const sy = (img.naturalHeight - size) / 2;
-          ctx.drawImage(img, sx, sy, size, size, 0, 0, size, size);
-          canvas.toBlob(b => b ? resolve(b) : reject(new Error('canvas error')), 'image/jpeg', 0.9);
-        };
-        img.onerror = reject;
-        img.src = objUrl;
-      });
-
-      // 3. Upload to S3
       await fetch(urlData.data.uploadUrl, {
-        method: 'PUT',
-        body: resized,
-        headers: { 'Content-Type': 'image/jpeg' },
+        method: 'PUT', body: blob, headers: { 'Content-Type': 'image/jpeg' },
       });
 
-      // 4. Save key → backend returns fresh presigned picture URL
       const saveRes = await fetch(`${API_BASE_URL}/api/profile/avatar`, {
         method: 'PATCH',
         headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
@@ -324,6 +378,7 @@ export default function UserProfileComponent() {
   }
 
   return (
+    <>
     <div className="max-w-4xl mx-auto p-6">
       {/* Header */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 mb-6">
@@ -334,6 +389,7 @@ export default function UserProfileComponent() {
                 <img
                   src={profile.picture}
                   alt="Profile"
+                  crossOrigin="anonymous"
                   className="h-20 w-20 rounded-full object-cover ring-4 ring-blue-100"
                 />
               ) : (
@@ -351,7 +407,7 @@ export default function UserProfileComponent() {
                   accept="image/*"
                   className="hidden"
                   disabled={avatarUploading}
-                  onChange={e => { const f = e.target.files?.[0]; if (f) uploadAvatar(f); e.target.value = ''; }}
+                  onChange={e => { const f = e.target.files?.[0]; if (f) openCropModal(f); e.target.value = ''; }}
                 />
               </label>
             </div>
@@ -734,5 +790,71 @@ export default function UserProfileComponent() {
         </div>
       </div>
     </div>
+    {/* ── Crop Modal ─────────────────────────────────────────────────────── */}
+    {cropImageUrl && (
+      <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+        <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6">
+          <h3 className="text-lg font-semibold text-gray-900 mb-1">Crop your photo</h3>
+          <p className="text-sm text-gray-500 mb-4">Drag to reposition · Use +/− to zoom</p>
+
+          {/* Canvas crop area */}
+          <div className="flex justify-center mb-4">
+            <canvas
+              ref={cropCanvasRef}
+              width={CROP_SIZE}
+              height={CROP_SIZE}
+              className="rounded-full cursor-grab active:cursor-grabbing ring-4 ring-indigo-200 shadow-lg"
+              style={{ width: CROP_SIZE, height: CROP_SIZE }}
+              onMouseDown={onCropMouseDown}
+              onMouseMove={onCropMouseMove}
+              onMouseUp={onCropMouseUp}
+              onMouseLeave={onCropMouseUp}
+              onTouchStart={onCropTouchStart}
+              onTouchMove={onCropTouchMove}
+              onTouchEnd={onCropMouseUp}
+            />
+          </div>
+
+          {/* Zoom controls */}
+          <div className="flex items-center gap-3 justify-center mb-6">
+            <button
+              onClick={() => setCropZoom(z => Math.max(0.2, +(z - 0.1).toFixed(1)))}
+              className="p-2 rounded-lg bg-gray-100 hover:bg-gray-200 transition-colors"
+            >
+              <ZoomOut className="h-5 w-5 text-gray-600" />
+            </button>
+            <input
+              type="range" min="0.2" max="3" step="0.05"
+              value={cropZoom}
+              onChange={e => setCropZoom(parseFloat(e.target.value))}
+              className="w-32 accent-indigo-500"
+            />
+            <button
+              onClick={() => setCropZoom(z => Math.min(3, +(z + 0.1).toFixed(1)))}
+              className="p-2 rounded-lg bg-gray-100 hover:bg-gray-200 transition-colors"
+            >
+              <ZoomIn className="h-5 w-5 text-gray-600" />
+            </button>
+          </div>
+
+          <div className="flex gap-3">
+            <button
+              onClick={closeCropModal}
+              className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 border border-gray-300 text-gray-700 rounded-xl hover:bg-gray-50 font-medium"
+            >
+              <X className="h-4 w-4" /> Cancel
+            </button>
+            <button
+              onClick={confirmCropAndUpload}
+              className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 font-medium shadow-md"
+            >
+              <Check className="h-4 w-4" /> Use this photo
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+    </>
   );
+
 }

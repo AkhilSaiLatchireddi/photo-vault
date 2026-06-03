@@ -23,6 +23,11 @@ export class S3Service {
       };
     }
 
+    // Disable automatic checksum validation — it injects x-amz-checksum-mode
+    // into presigned URLs which causes S3 to return 403 when <img> tags load
+    // them (browser doesn't send that header on image requests)
+    s3Config.requestChecksumCalculation = 'WHEN_REQUIRED';
+    s3Config.responseChecksumValidation = 'WHEN_REQUIRED';
     this.s3Client = new S3Client(s3Config);
     
     // Get bucket name from environment (stored in AWS SSM Parameter Store for Lambda)
@@ -75,9 +80,7 @@ export class S3Service {
         Key: key,
       });
 
-      const signedUrl = await getSignedUrl(this.s3Client, command, { 
-        expiresIn 
-      });
+      const signedUrl = await getSignedUrl(this.s3Client, command, { expiresIn });
 
       return {
         success: true,
@@ -102,9 +105,7 @@ export class S3Service {
           Key: key,
         });
 
-        const signedUrl = await getSignedUrl(this.s3Client, command, { 
-          expiresIn 
-        });
+        const signedUrl = await getSignedUrl(this.s3Client, command, { expiresIn });
 
         return {
           key,
