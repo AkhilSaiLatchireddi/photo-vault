@@ -14,14 +14,12 @@ export default function Header({ showNavigation = true }: HeaderProps) {
   const [showHelp, setShowHelp] = useState(false);
 
   const handleLogout = () => {
-    // Clear all caches before logout to prevent data leakage
     photoService.clearAllCaches();
-    
-    logout({
-      logoutParams: {
-        returnTo: window.location.origin,
-      }
-    });
+    // Build the correct return URL including the /photo-vault base path on GitHub Pages
+    const base = window.location.hostname === 'akhilsailatchireddi.github.io'
+      ? `${window.location.origin}/photo-vault`
+      : window.location.origin;
+    logout({ logoutParams: { returnTo: base } });
   };
 
   const isActive = (path: string) => {

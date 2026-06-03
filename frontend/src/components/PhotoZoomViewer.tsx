@@ -403,9 +403,9 @@ export default function PhotoZoomViewer({
         </div>
       </div>
 
-      {/* Main Content Container */}
+      {/* Main Content Container — flex-1 with min-h-0 so it actually shrinks and fills */}
       <div
-        className={`flex-1 relative overflow-hidden ${isVideo ? 'flex items-center justify-center bg-black' : 'cursor-grab active:cursor-grabbing'}`}
+        className={`flex-1 min-h-0 relative overflow-hidden flex items-center justify-center ${isVideo ? 'bg-black' : 'cursor-grab active:cursor-grabbing'}`}
         onWheel={isVideo ? undefined : handleWheel}
         onMouseDown={isVideo ? undefined : handleMouseDown}
         onMouseMove={isVideo ? undefined : handleMouseMove}
@@ -424,38 +424,27 @@ export default function PhotoZoomViewer({
             style={{ maxHeight: 'calc(100vh - 160px)' }}
           />
         ) : (fullUrl ?? photo.downloadUrl) && photo.mimeType.startsWith('image/') ? (
-          !userZoomed ? (
-            <div className="absolute inset-0 flex items-center justify-center">
-              <img
-                ref={imageRef}
-                src={fullUrl ?? photo.downloadUrl}
-                alt={photo.originalName}
-                style={{
-                  maxWidth: '100%',
-                  maxHeight: '100%',
-                  objectFit: 'contain',
-                  rotate: transform.rotate ? `${transform.rotate}deg` : undefined,
-                  transition: 'rotate 0.2s ease-out',
-                }}
-                draggable={false}
-                onLoad={fitToScreen}
-              />
-            </div>
-          ) : (
-            // Zoomed: transform-based pan/zoom
-            <img
-              ref={imageRef}
-              src={fullUrl ?? photo.downloadUrl}
-              alt={photo.originalName}
-              className="absolute inset-0 m-auto max-w-none"
-              style={{
-                transform: `scale(${transform.scale}) translate(${transform.translateX / transform.scale}px, ${transform.translateY / transform.scale}px) rotate(${transform.rotate}deg)`,
-                transformOrigin: 'center center',
-                transition: isDragging ? 'none' : 'transform 0.2s ease-out',
-              }}
-              draggable={false}
-            />
-          )
+          <img
+            ref={imageRef}
+            src={fullUrl ?? photo.downloadUrl}
+            alt={photo.originalName}
+            style={!userZoomed ? {
+              // Fit mode: browser centres + scales via flex parent + max constraints
+              maxWidth: '100%',
+              maxHeight: '100%',
+              objectFit: 'contain',
+              rotate: transform.rotate ? `${transform.rotate}deg` : undefined,
+              transition: 'rotate 0.2s ease-out',
+            } : {
+              // Zoom mode: user-driven transform
+              transform: `scale(${transform.scale}) translate(${transform.translateX / transform.scale}px, ${transform.translateY / transform.scale}px) rotate(${transform.rotate}deg)`,
+              transformOrigin: 'center center',
+              transition: isDragging ? 'none' : 'transform 0.2s ease-out',
+              maxWidth: 'none',
+            }}
+            draggable={false}
+            onLoad={fitToScreen}
+          />
         ) : (
           <div className="flex items-center justify-center h-full">
             <div className="text-center text-white">

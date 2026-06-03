@@ -59,14 +59,11 @@ export default function PhotoDashboard() {
     userName: user?.name
   });
 
-  // Logout function with redirect
   const handleLogout = () => {
-    debugLog('🚪 Logout initiated');
-    logout({
-      logoutParams: {
-        returnTo: window.location.origin,
-      }
-    });
+    const base = window.location.hostname === 'akhilsailatchireddi.github.io'
+      ? `${window.location.origin}/photo-vault`
+      : window.location.origin;
+    logout({ logoutParams: { returnTo: base } });
   };
 
   // Get Auth0 token
