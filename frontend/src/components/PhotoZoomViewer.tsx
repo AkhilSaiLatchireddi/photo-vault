@@ -52,14 +52,33 @@ export default function PhotoZoomViewer({
   showDownloadButton = false,
   showDeleteButton = false
 }: PhotoZoomViewerProps) {
-  console.log('PhotoZoomViewer rendered with:', { photo, isOpen });
   const isVideo = photo.mimeType.startsWith('video/');
+  // Full-resolution URL — may be null in listing (thumbnail-only mode), fetched on open
+  const [fullUrl, setFullUrl] = useState<string | null>(photo.downloadUrl ?? null);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    // If downloadUrl is provided, use it directly
+    if (photo.downloadUrl) { setFullUrl(photo.downloadUrl); return; }
+    // Otherwise fetch on-demand via the download endpoint
+    if (!photo.photoId) return;
+    let cancelled = false;
+    import('../services/photoService').then(({ photoService }) =>
+      photoService.getPhotoDownloadUrl(photo.photoId!)
+        .then(url => { if (!cancelled && url) setFullUrl(url); })
+        .catch(() => { /* use thumbnail as fallback */ })
+    );
+    return () => { cancelled = true; };
+  }, [isOpen, photo.photoId, photo.downloadUrl]);
+
   const [transform, setTransform] = useState<Transform>({
     scale: 1,
     translateX: 0,
     translateY: 0,
     rotate: 0
   });
+  // Whether the user has manually zoomed/panned (disables contain mode)
+  const [userZoomed, setUserZoomed] = useState(false);
   
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
@@ -70,12 +89,13 @@ export default function PhotoZoomViewer({
   const containerRef = useRef<HTMLDivElement>(null);
   const imageRef = useRef<HTMLImageElement>(null);
 
-  // Reset transform when photo changes or modal opens
   useEffect(() => {
     if (isOpen) {
-      resetTransform();
+      setTransform({ scale: 1, translateX: 0, translateY: 0, rotate: 0 });
+      setUserZoomed(false);
+      setFullUrl(photo.downloadUrl ?? null); // reset so new photo doesn't flash old URL
     }
-  }, [isOpen, photo]);
+  }, [isOpen, photo.photoId]);
 
   // Handle keyboard shortcuts
   useEffect(() => {
@@ -127,26 +147,18 @@ export default function PhotoZoomViewer({
   }, []);
 
   const resetTransform = useCallback(() => {
-    setTransform({
-      scale: 1,
-      translateX: 0,
-      translateY: 0,
-      rotate: 0
-    });
+    setTransform({ scale: 1, translateX: 0, translateY: 0, rotate: 0 });
+    setUserZoomed(false);
   }, []);
 
   const zoomIn = useCallback(() => {
-    setTransform(prev => ({
-      ...prev,
-      scale: Math.min(prev.scale * 1.25, 5)
-    }));
+    setUserZoomed(true);
+    setTransform(prev => ({ ...prev, scale: Math.min(prev.scale * 1.25, 5) }));
   }, []);
 
   const zoomOut = useCallback(() => {
-    setTransform(prev => ({
-      ...prev,
-      scale: Math.max(prev.scale / 1.25, 0.1)
-    }));
+    setUserZoomed(true);
+    setTransform(prev => ({ ...prev, scale: Math.max(prev.scale / 1.25, 0.1) }));
   }, []);
 
   const rotateClockwise = useCallback(() => {
@@ -164,25 +176,12 @@ export default function PhotoZoomViewer({
   }, []);
 
   const fitToScreen = useCallback(() => {
-    if (!imageRef.current || !containerRef.current) return;
-    
-    const container = containerRef.current;
-    const containerWidth = container.clientWidth - 40; // padding
-    const containerHeight = container.clientHeight - 100; // controls space
-    
-    const imageWidth = photo.width || imageRef.current.naturalWidth;
-    const imageHeight = photo.height || imageRef.current.naturalHeight;
-    
-    const scaleX = containerWidth / imageWidth;
-    const scaleY = containerHeight / imageHeight;
-    const scale = Math.min(scaleX, scaleY, 1);
-    
-    setTransform({
-      scale,
-      translateX: 0,
-      translateY: 0,
-      rotate: 0
-    });
+    const vw = (containerRef.current?.clientWidth ?? window.innerWidth) - 40;
+    const vh = (containerRef.current?.clientHeight ?? window.innerHeight) - 160;
+    const imageWidth = imageRef.current?.naturalWidth || photo.width || 800;
+    const imageHeight = imageRef.current?.naturalHeight || photo.height || 600;
+    const scale = Math.min(vw / imageWidth, vh / imageHeight, 1);
+    setTransform({ scale, translateX: 0, translateY: 0, rotate: 0 });
   }, [photo.width, photo.height]);
 
   const toggleFullscreen = useCallback(async () => {
@@ -202,9 +201,9 @@ export default function PhotoZoomViewer({
   // Mouse wheel zoom
   const handleWheel = useCallback((e: React.WheelEvent) => {
     e.preventDefault();
+    setUserZoomed(true);
     const delta = e.deltaY > 0 ? -1 : 1;
     const scaleFactor = 1.1;
-    
     setTransform(prev => ({
       ...prev,
       scale: Math.min(Math.max(prev.scale * (delta > 0 ? scaleFactor : 1/scaleFactor), 0.1), 5)
@@ -214,6 +213,7 @@ export default function PhotoZoomViewer({
   // Mouse drag handling
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
+    setUserZoomed(true);
     setIsDragging(true);
     setDragStart({
       x: e.clientX - transform.translateX,
@@ -415,28 +415,47 @@ export default function PhotoZoomViewer({
         onTouchMove={isVideo ? undefined : handleTouchMove}
         onTouchEnd={isVideo ? undefined : handleTouchEnd}
       >
-        {isVideo && photo.downloadUrl ? (
+        {isVideo && (fullUrl ?? photo.downloadUrl) ? (
           <video
-            src={photo.downloadUrl}
+            src={fullUrl ?? photo.downloadUrl}
             controls
             controlsList="nodownload"
             className="max-h-full max-w-full rounded"
             style={{ maxHeight: 'calc(100vh - 160px)' }}
           />
-        ) : photo.downloadUrl && photo.mimeType.startsWith('image/') ? (
-          <img
-            ref={imageRef}
-            src={photo.downloadUrl}
-            alt={photo.originalName}
-            className="absolute inset-0 m-auto max-w-none"
-            style={{
-              transform: `scale(${transform.scale}) translate(${transform.translateX / transform.scale}px, ${transform.translateY / transform.scale}px) rotate(${transform.rotate}deg)`,
-              transformOrigin: 'center center',
-              transition: isDragging ? 'none' : 'transform 0.2s ease-out'
-            }}
-            draggable={false}
-            onLoad={fitToScreen}
-          />
+        ) : (fullUrl ?? photo.downloadUrl) && photo.mimeType.startsWith('image/') ? (
+          !userZoomed ? (
+            <div className="absolute inset-0 flex items-center justify-center">
+              <img
+                ref={imageRef}
+                src={fullUrl ?? photo.downloadUrl}
+                alt={photo.originalName}
+                style={{
+                  maxWidth: '100%',
+                  maxHeight: '100%',
+                  objectFit: 'contain',
+                  rotate: transform.rotate ? `${transform.rotate}deg` : undefined,
+                  transition: 'rotate 0.2s ease-out',
+                }}
+                draggable={false}
+                onLoad={fitToScreen}
+              />
+            </div>
+          ) : (
+            // Zoomed: transform-based pan/zoom
+            <img
+              ref={imageRef}
+              src={fullUrl ?? photo.downloadUrl}
+              alt={photo.originalName}
+              className="absolute inset-0 m-auto max-w-none"
+              style={{
+                transform: `scale(${transform.scale}) translate(${transform.translateX / transform.scale}px, ${transform.translateY / transform.scale}px) rotate(${transform.rotate}deg)`,
+                transformOrigin: 'center center',
+                transition: isDragging ? 'none' : 'transform 0.2s ease-out',
+              }}
+              draggable={false}
+            />
+          )
         ) : (
           <div className="flex items-center justify-center h-full">
             <div className="text-center text-white">

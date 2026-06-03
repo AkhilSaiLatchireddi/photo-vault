@@ -2,12 +2,15 @@
   "permissions": {
     "allow": [
       "Bash(npm install *)",
+      "Bash(npm run *)",
+      "Bash(npx tsc *)",
       "Bash(unset AWS_PROFILE)",
       "Bash(unset AWS_DEFAULT_PROFILE)",
       "Bash(aws logs *)",
+      "Bash(aws lambda wait *)",
+      "Bash(curl -s https://*.execute-api.us-east-1.amazonaws.com/*)",
       "Bash(grep -v \"^$\")",
-      "Bash(npx tsc *)",
-      "Bash(npm run *)"
+      "Bash(grep *)"
     ]
   }
 }

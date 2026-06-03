@@ -11,13 +11,27 @@ router.use(ensureUserMiddleware);
 
 // ─── People ───────────────────────────────────────────────────────────────────
 
-// GET /api/people — list all people for the user
+// GET /api/people — list all people for the user + shared album owners
 router.get('/', async (req: Request, res: Response) => {
   try {
-    const people = await db.getPeopleByUserId(req.user!.id);
+    const userId = req.user!.id;
 
-    // Generate face thumbnail presigned URLs for cover faces
-    const peopleWithUrls = await Promise.all(people.map(async (person) => {
+    // Own people
+    const ownPeople = await db.getPeopleByUserId(userId);
+
+    // People from accounts that shared albums with this user (e.g. husband → wife)
+    const sharedOwnerIds = await db.getSharedAlbumOwnerIds(userId);
+    const sharedPeopleLists = await Promise.all(sharedOwnerIds.map(id => db.getPeopleByUserId(id)));
+    const sharedPeople = sharedPeopleLists.flat();
+
+    // Merge, dedup by personId, mark shared ones as readOnly
+    const seen = new Set<string>();
+    const all = [
+      ...ownPeople.map(p => ({ ...p, readOnly: false })),
+      ...sharedPeople.map(p => ({ ...p, readOnly: true })),
+    ].filter(p => { if (seen.has(p.personId)) return false; seen.add(p.personId); return true; });
+
+    const peopleWithUrls = await Promise.all(all.map(async (person) => {
       let coverUrl: string | null = null;
       if (person.coverFaceS3Key) {
         try {
@@ -39,18 +53,29 @@ router.get('/', async (req: Request, res: Response) => {
 router.get('/:id/photos', async (req: Request, res: Response) => {
   try {
     const person = await db.getPersonById(req.params.id);
-    if (!person || person.userId !== req.user!.id) {
+    const userId = req.user!.id;
+    // Allow if owner OR if person belongs to someone who shared albums with this user
+    const sharedOwnerIds = await db.getSharedAlbumOwnerIds(userId);
+    const canAccess = person && (person.userId === userId || sharedOwnerIds.includes(person.userId));
+    if (!canAccess) {
       return res.status(404).json({ success: false, error: 'Person not found' });
     }
 
     const photoIds = await db.getPhotosByPersonId(req.params.id);
     const photos = await db.getPhotosByIds(photoIds);
 
-    // Filter to only this user's photos
-    const userPhotos = photos.filter(p => p.userId === req.user!.id);
+    let visiblePhotos;
+    if (person.userId === userId) {
+      // Owner sees all their own photos for this person
+      visiblePhotos = photos.filter(p => p.userId === userId);
+    } else {
+      // Shared user only sees photos that are in albums shared with them
+      const visiblePhotoIds = await db.getPhotoIdsVisibleToSharedUser(userId);
+      visiblePhotos = photos.filter(p => visiblePhotoIds.has(p.photoId));
+    }
 
-    const { urls } = await s3Service.getBatchObjectUrls(userPhotos.map(p => p.s3Key), 7200);
-    const photosWithUrls = userPhotos.map(p => ({
+    const { urls } = await s3Service.getBatchObjectUrls(visiblePhotos.map(p => p.s3Key), 7200);
+    const photosWithUrls = visiblePhotos.map(p => ({
       ...p,
       downloadUrl: urls.find(u => u.key === p.s3Key)?.url ?? null,
     }));
@@ -178,7 +203,21 @@ router.post('/detect/:photoId', async (req: Request, res: Response) => {
 // GET /api/people/faces/:photoId — get face data for a photo
 router.get('/faces/:photoId', async (req: Request, res: Response) => {
   try {
-    const photo = await db.getPhotoById(req.params.photoId, req.user!.id);
+    const userId = req.user!.id;
+    // Allow own photos OR photos that are in albums explicitly shared with this user
+    let photo = await db.getPhotoById(req.params.photoId, userId);
+    if (!photo) {
+      // Check if this photoId is inside a shared album
+      const visiblePhotoIds = await db.getPhotoIdsVisibleToSharedUser(userId);
+      if (visiblePhotoIds.has(req.params.photoId)) {
+        // Fetch the photo directly (bypassing owner check) since we confirmed it's visible
+        const sharedOwnerIds = await db.getSharedAlbumOwnerIds(userId);
+        for (const ownerId of sharedOwnerIds) {
+          photo = await db.getPhotoById(req.params.photoId, ownerId) ?? null;
+          if (photo) break;
+        }
+      }
+    }
     if (!photo) return res.status(404).json({ success: false, error: 'Photo not found' });
 
     const faces = await db.getPhotoFaces(photo.photoId);

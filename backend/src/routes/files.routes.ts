@@ -23,17 +23,21 @@ function formatFileSize(bytes: number): string {
 router.get('/', async (req: Request, res: Response) => {
   try {
     const userId = req.user!.id;
-    const limit = parseInt(req.query.limit as string) || 50;
+    const limit = parseInt(req.query.limit as string) || 200;
     const lastKey = req.query.nextKey ? JSON.parse(decodeURIComponent(req.query.nextKey as string)) : undefined;
 
     const { photos, nextKey } = await db.getUserPhotos(userId, limit, lastKey);
 
-    const keys = photos.map(p => p.s3Key);
-    const { urls } = await s3Service.getBatchObjectUrls(keys, 7200);
+    // For listing: only sign thumbnail keys where available, original otherwise.
+    // The original URL is fetched on-demand when the viewer opens (/download).
+    const listingKeys = photos.map(p => p.thumbnailS3Key ?? p.s3Key);
+    const { urls } = await s3Service.getBatchObjectUrls(listingKeys, 7200);
 
-    const photosWithUrls = photos.map(p => ({
+    const photosWithUrls = photos.map((p, i) => ({
       ...p,
-      downloadUrl: urls.find(u => u.key === p.s3Key)?.url ?? null,
+      // downloadUrl = original (null in listing — fetched on-demand by viewer)
+      downloadUrl: p.thumbnailS3Key ? null : (urls[i]?.url ?? null),
+      thumbnailUrl: p.thumbnailS3Key ? (urls[i]?.url ?? null) : null,
     }));
 
     res.json({
@@ -144,17 +148,38 @@ router.post('/upload-url', async (req: Request, res: Response) => {
       metadata,
     });
 
+    // Also return a presigned URL for the thumbnail (client will upload a compressed version)
+    const thumbS3Key = `users/${username}/thumbs/${photo.photoId}.jpg`;
+    const thumbUploadResult = await s3Service.getUploadUrl(thumbS3Key, 'image/jpeg');
+
     res.json({
       success: true,
       data: {
         ...uploadResult,
         photo: { id: photo.photoId, s3Key: photo.s3Key },
         needsConversion: isHeic(contentType, fileName),
+        thumbnailUploadUrl: thumbUploadResult.uploadUrl,
+        thumbnailS3Key: thumbS3Key,
       },
     });
   } catch (error) {
     console.error('Error generating upload URL:', error);
     res.status(500).json({ success: false, error: 'Failed to generate upload URL' });
+  }
+});
+
+// PATCH /api/files/:id/thumbnail — save thumbnailS3Key after client uploads thumbnail
+router.patch('/:id/thumbnail', async (req: Request, res: Response) => {
+  try {
+    const { thumbnailS3Key } = req.body;
+    if (!thumbnailS3Key) return res.status(400).json({ success: false, error: 'thumbnailS3Key required' });
+    const photo = await db.getPhotoById(req.params.id, req.user!.id);
+    if (!photo) return res.status(404).json({ success: false, error: 'Photo not found' });
+    await db.updatePhoto(req.params.id, req.user!.id, { thumbnailS3Key });
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error saving thumbnail key:', error);
+    res.status(500).json({ success: false, error: 'Failed to save thumbnail' });
   }
 });
 

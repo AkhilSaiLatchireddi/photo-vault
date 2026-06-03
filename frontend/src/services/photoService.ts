@@ -9,9 +9,9 @@ class PhotoService {
   
   // Cache TTL configurations (in milliseconds)
   private readonly CACHE_TTL = {
-    PHOTOS: 5 * 60 * 1000,      // 5 minutes for photos list
-    ALBUMS: 2 * 60 * 1000,      // 2 minutes for albums list
-    ALBUM_DETAIL: 3 * 60 * 1000 // 3 minutes for album details
+    PHOTOS: 90 * 60 * 1000,      // 90 min — matches S3 presigned URL lifetime
+    ALBUMS: 90 * 60 * 1000,
+    ALBUM_DETAIL: 90 * 60 * 1000,
   };
 
   // Initialize with Auth0 token getter
@@ -26,7 +26,6 @@ class PhotoService {
     if (useCache) {
       const cached = cacheService.get<any>(cacheKey);
       if (cached) {
-        console.log('[Cache HIT] Photos list from cache');
         return {
           success: true,
           data: cached
@@ -34,7 +33,6 @@ class PhotoService {
       }
     }
     
-    console.log('[Cache MISS] Fetching photos from API');
     const response = await fetch(`${this.apiBaseUrl}/api/files`, {
       method: 'GET',
       credentials: 'include',
@@ -134,7 +132,6 @@ class PhotoService {
   async testTokenAccess(): Promise<string | null> {
     try {
       const token = await this.getToken();
-      console.log('Token available:', token ? 'Yes (token exists)' : 'No (token missing)');
       return token;
     } catch (err) {
       console.error('Error getting authentication token:', err);
@@ -149,7 +146,6 @@ class PhotoService {
     // Try cache first
     const cached = cacheService.get<any>(cacheKey);
     if (cached) {
-      console.log('[Cache HIT] Albums list from cache');
       return {
         success: true,
         data: cached
@@ -157,8 +153,6 @@ class PhotoService {
     }
     
     try {
-      console.log('[Cache MISS] Fetching albums from API');
-      console.log(`Fetching albums from: ${this.apiBaseUrl}/api/albums`);
       
       // Get the auth token
       const token = await this.getToken();
@@ -177,7 +171,6 @@ class PhotoService {
         mode: 'cors'
       });
       
-      console.log(`Albums response status: ${response.status} ${response.statusText}`);
       
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -221,7 +214,6 @@ class PhotoService {
     
     // Invalidate albums list cache
     cacheService.invalidate('albums-list');
-    console.log('[Cache INVALIDATE] Albums list after create');
     
     // Return in a standardized format to match other API responses
     return {
@@ -236,7 +228,6 @@ class PhotoService {
     // Try cache first
     const cached = cacheService.get<any>(cacheKey);
     if (cached) {
-      console.log(`[Cache HIT] Album ${albumId} from cache`);
       return {
         success: true,
         data: cached
@@ -245,7 +236,6 @@ class PhotoService {
     
     try {
       // Log attempt to fetch album
-      console.log(`[Cache MISS] Fetching album from API: ${albumId}`);
       
       // Get the auth token
       const token = await this.getToken();
@@ -274,7 +264,6 @@ class PhotoService {
       const response = await Promise.race([fetchPromise, timeout]) as Response;
 
       // Log response status
-      console.log(`Album fetch response status: ${response.status} ${response.statusText}`);
       
       if (!response.ok) {
         // Handle specific error codes
@@ -314,7 +303,6 @@ class PhotoService {
       }
       
       // Log successful data retrieval
-      console.log(`Successfully fetched album with ${data.data?.photos?.length || 0} photos`);
       
       // Cache the result
       const albumData = data.data || data;
@@ -353,7 +341,6 @@ class PhotoService {
     // Invalidate related caches
     cacheService.invalidate('albums-list');
     cacheService.invalidate(`album-detail-${albumId}`);
-    console.log(`[Cache INVALIDATE] Albums list and album ${albumId} after update`);
     
     // Return in a standardized format to match other API responses
     return {
@@ -382,7 +369,6 @@ class PhotoService {
     // Invalidate related caches
     cacheService.invalidate('albums-list');
     cacheService.invalidate(`album-detail-${albumId}`);
-    console.log(`[Cache INVALIDATE] Albums list and album ${albumId} after delete`);
     
     // Return in a standardized format to match other API responses
     return {
@@ -411,7 +397,6 @@ class PhotoService {
     
     // Invalidate album detail cache as photos changed
     cacheService.invalidate(`album-detail-${albumId}`);
-    console.log(`[Cache INVALIDATE] Album ${albumId} after adding photos`);
     
     // Return in a standardized format to match other API responses
     return {
@@ -439,7 +424,6 @@ class PhotoService {
     
     // Invalidate album detail cache as photos changed
     cacheService.invalidate(`album-detail-${albumId}`);
-    console.log(`[Cache INVALIDATE] Album ${albumId} after removing photo`);
     
     // Return in a standardized format to match other API responses
     return {
@@ -476,6 +460,43 @@ class PhotoService {
       success: true,
       data: data.data || data
     };
+  }
+
+  async getPhotoDownloadUrl(photoId: string): Promise<string | null> {
+    const response = await fetch(`${this.apiBaseUrl}/api/files/${photoId}/download`, {
+      headers: { 'Authorization': `Bearer ${await this.getToken()}` },
+    });
+    if (!response.ok) return null;
+    const data = await response.json();
+    return data?.data?.url ?? null;
+  }
+
+  async setSubAlbums(albumId: string, subAlbumIds: string[]) {
+    const response = await fetch(`${this.apiBaseUrl}/api/albums/${albumId}/sub-albums`, {
+      method: 'PUT',
+      headers: { 'Authorization': `Bearer ${await this.getToken()}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ subAlbumIds }),
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    // Bust cache so fetchAlbum returns fresh data with resolved subAlbums
+    cacheService.invalidate(`album-detail-${albumId}`);
+    return response.json();
+  }
+
+  async getAlbumPeople(albumId: string) {
+    const response = await fetch(`${this.apiBaseUrl}/api/albums/${albumId}/people`, {
+      headers: { 'Authorization': `Bearer ${await this.getToken()}`, 'Content-Type': 'application/json' },
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return response.json();
+  }
+
+  async getPublicAlbumPeople(publicToken: string) {
+    const response = await fetch(`${this.apiBaseUrl}/api/public/albums/${publicToken}/people`, {
+      headers: { 'Content-Type': 'application/json' },
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return response.json();
   }
 
   async generatePublicLink(albumId: string, expiresAt?: string) {
@@ -565,7 +586,6 @@ class PhotoService {
    */
   invalidatePhotosCache(): void {
     cacheService.invalidate('photos-list');
-    console.log('[Cache INVALIDATE] Photos list');
   }
   
   /**
@@ -573,7 +593,6 @@ class PhotoService {
    */
   invalidateAlbumsCache(): void {
     cacheService.invalidate('albums-list');
-    console.log('[Cache INVALIDATE] Albums list');
   }
   
   /**
@@ -581,7 +600,6 @@ class PhotoService {
    */
   invalidateAlbumCache(albumId: string): void {
     cacheService.invalidate(`album-detail-${albumId}`);
-    console.log(`[Cache INVALIDATE] Album ${albumId}`);
   }
 }
 

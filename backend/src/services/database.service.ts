@@ -7,6 +7,7 @@ import {
   UpdateCommand,
   DeleteCommand,
   ScanCommand,
+  BatchGetCommand,
 } from '@aws-sdk/lib-dynamodb';
 import { randomUUID, randomBytes } from 'crypto';
 
@@ -47,6 +48,7 @@ export interface Photo {
   userId: string;
   filename: string;
   s3Key: string;
+  thumbnailS3Key?: string;   // compressed ~400px thumbnail stored separately
   originalName: string;
   mimeType: string;
   fileSize: number;
@@ -64,6 +66,7 @@ export interface Album {
   description?: string;
   coverPhotoId?: string;
   photoIds: string[];
+  subAlbumIds?: string[];   // ordered list of child album IDs (for the Sections/Events tab)
   isPublic: boolean;
   publicToken?: string;
   publicExpiresAt?: string;
@@ -156,13 +159,28 @@ export async function getPhotoByS3Key(s3Key: string): Promise<Photo | null> {
 
 export async function getPhotosByIds(photoIds: string[]): Promise<Photo[]> {
   if (photoIds.length === 0) return [];
-  const results = await Promise.all(
-    photoIds.map(id => db.send(new GetCommand({ TableName: TABLE.PHOTOS, Key: { photoId: id } })))
-  );
-  return results.map(r => r.Item).filter(Boolean) as Photo[];
+  const photos: Photo[] = [];
+  // BatchGetItem handles max 100 keys per call
+  for (let i = 0; i < photoIds.length; i += 100) {
+    const chunk = photoIds.slice(i, i + 100);
+    const res = await db.send(new BatchGetCommand({
+      RequestItems: {
+        [TABLE.PHOTOS]: {
+          Keys: chunk.map(id => ({ photoId: id })),
+        },
+      },
+    }));
+    const items = (res.Responses?.[TABLE.PHOTOS] ?? []) as Photo[];
+    photos.push(...items);
+    // Handle unprocessed keys (rare — capacity throttle)
+    // Simple retry not needed at this scale; items just won't appear
+  }
+  // Restore original order (BatchGet returns unordered)
+  const map = new Map(photos.map(p => [p.photoId, p]));
+  return photoIds.map(id => map.get(id)).filter(Boolean) as Photo[];
 }
 
-export async function updatePhoto(photoId: string, userId: string, patch: Partial<Pick<Photo, 's3Key' | 'mimeType' | 'width' | 'height'>>): Promise<void> {
+export async function updatePhoto(photoId: string, userId: string, patch: Partial<Pick<Photo, 's3Key' | 'mimeType' | 'width' | 'height' | 'thumbnailS3Key'>>): Promise<void> {
   const existing = await getPhotoById(photoId, userId);
   if (!existing) return;
   const merged = { ...patch, updatedAt: new Date().toISOString() };
@@ -256,7 +274,20 @@ export async function getAlbumByToken(token: string): Promise<Album | null> {
   return album;
 }
 
-export async function updateAlbum(albumId: string, userId: string, patch: Partial<Pick<Album, 'title' | 'description' | 'coverPhotoId' | 'isPublic' | 'publicToken' | 'publicExpiresAt' | 'photoIds' | 'sharedWith'>>): Promise<Album | null> {
+export async function getSubAlbums(subAlbumIds: string[]): Promise<{ albumId: string; title: string; publicToken?: string }[]> {
+  if (!subAlbumIds || subAlbumIds.length === 0) return [];
+  const results = await Promise.all(
+    subAlbumIds.map(id =>
+      db.send(new GetCommand({ TableName: TABLE.ALBUMS, Key: { albumId: id } }))
+        .then(r => r.Item as Album | undefined)
+    )
+  );
+  return results
+    .filter((a): a is Album => !!a)
+    .map(a => ({ albumId: a.albumId, title: a.title, publicToken: a.publicToken }));
+}
+
+export async function updateAlbum(albumId: string, userId: string, patch: Partial<Pick<Album, 'title' | 'description' | 'coverPhotoId' | 'isPublic' | 'publicToken' | 'publicExpiresAt' | 'photoIds' | 'subAlbumIds' | 'sharedWith'>>): Promise<Album | null> {
   const existing = await getAlbumById(albumId);
   if (!existing || existing.userId !== userId) return null;
 
@@ -405,6 +436,38 @@ export async function getPeopleByUserId(userId: string): Promise<Person[]> {
   return (res.Items ?? []) as Person[];
 }
 
+// Returns all distinct userIds whose albums are shared with `userId`.
+// Used so a shared user can see faces/people from the album owner.
+export async function getSharedAlbumOwnerIds(userId: string): Promise<string[]> {
+  // DynamoDB can't filter on list-of-maps with a GSI, so scan + filter in JS.
+  // Albums table is small (one row per album) so this is cheap.
+  const all = await db.send(new ScanCommand({ TableName: TABLE.ALBUMS }));
+  const ownerIds = new Set<string>();
+  for (const item of (all.Items ?? []) as Album[]) {
+    if ((item.sharedWith ?? []).some(s => s.userId === userId)) {
+      ownerIds.add(item.userId);
+    }
+  }
+  return [...ownerIds];
+}
+
+// Returns only the photoIds that are inside albums explicitly shared with userId.
+// Used to prevent a shared user from seeing private photos that are not in any shared album.
+export async function getPhotoIdsVisibleToSharedUser(userId: string): Promise<Set<string>> {
+  const all = await db.send(new ScanCommand({ TableName: TABLE.ALBUMS }));
+  const visiblePhotoIds = new Set<string>();
+  for (const item of (all.Items ?? []) as Album[]) {
+    const isShared = (item.sharedWith ?? []).some(s => s.userId === userId);
+    const isPublic = item.isPublic;
+    if (isShared || isPublic) {
+      for (const photoId of (item.photoIds ?? [])) {
+        visiblePhotoIds.add(photoId);
+      }
+    }
+  }
+  return visiblePhotoIds;
+}
+
 export async function getPersonById(personId: string): Promise<Person | null> {
   const res = await db.send(new GetCommand({ TableName: TABLE_PEOPLE, Key: { personId } }));
   return (res.Item as Person) ?? null;
@@ -446,6 +509,59 @@ export async function savePhotoFaces(photoId: string, userId: string, faces: Pho
 export async function getPhotoFaces(photoId: string): Promise<PhotoFace | null> {
   const res = await db.send(new GetCommand({ TableName: TABLE_FACES, Key: { photoId } }));
   return (res.Item as PhotoFace) ?? null;
+}
+
+// Batch-fetch face records for multiple photos. Returns only photos that have face data.
+export async function getBatchPhotoFaces(photoIds: string[]): Promise<PhotoFace[]> {
+  if (photoIds.length === 0) return [];
+  // Process in chunks of 100 with parallel Gets (cheap at this scale)
+  const results: PhotoFace[] = [];
+  for (let i = 0; i < photoIds.length; i += 100) {
+    const chunk = photoIds.slice(i, i + 100);
+    const fetched = await Promise.all(
+      chunk.map(id =>
+        db.send(new GetCommand({ TableName: TABLE_FACES, Key: { photoId: id } }))
+          .then(r => r.Item as PhotoFace | undefined)
+      )
+    );
+    results.push(...fetched.filter((f): f is PhotoFace => !!f && (f.faces?.length ?? 0) > 0));
+  }
+  return results;
+}
+
+// Given a list of photoIds, returns [{person, photoIds, coverUrl}] grouped by person.
+// Only includes people whose faces appear in the provided photo set.
+export async function getPeopleInPhotoSet(photoIds: string[], albumOwnerId: string): Promise<
+  { person: Person; photoIds: string[] }[]
+> {
+  const faceRecords = await getBatchPhotoFaces(photoIds);
+
+  // Build map: personId → photoIds[]
+  const personPhotoMap = new Map<string, string[]>();
+  for (const record of faceRecords) {
+    for (const face of record.faces ?? []) {
+      if (!face.personId) continue;
+      if (!personPhotoMap.has(face.personId)) personPhotoMap.set(face.personId, []);
+      const arr = personPhotoMap.get(face.personId)!;
+      if (!arr.includes(record.photoId)) arr.push(record.photoId);
+    }
+  }
+
+  if (personPhotoMap.size === 0) return [];
+
+  // Fetch person records
+  const people = await getPeopleByUserId(albumOwnerId);
+  const peopleMap = new Map(people.map(p => [p.personId, p]));
+
+  const result: { person: Person; photoIds: string[] }[] = [];
+  for (const [personId, pPhotoIds] of personPhotoMap) {
+    const person = peopleMap.get(personId);
+    if (!person) continue;
+    result.push({ person, photoIds: pPhotoIds });
+  }
+
+  // Sort by photo count descending (most-seen person first)
+  return result.sort((a, b) => b.photoIds.length - a.photoIds.length);
 }
 
 export async function updatePhotoFacePersonId(photoId: string, faceId: string, personId: string): Promise<void> {

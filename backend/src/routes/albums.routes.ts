@@ -41,18 +41,23 @@ router.get('/:id', async (req: Request, res: Response) => {
     if (!album) return res.status(404).json({ success: false, error: 'Album not found or access denied' });
 
     const photos = await db.getPhotosByIds(album.photoIds);
-    const { urls } = await s3Service.getBatchObjectUrls(photos.map(p => p.s3Key), 7200);
-    const photosWithUrls = photos.map(p => ({
+    const listingKeys = photos.map(p => p.thumbnailS3Key ?? p.s3Key);
+    const { urls } = await s3Service.getBatchObjectUrls(listingKeys, 7200);
+    const photosWithUrls = photos.map((p, i) => ({
       ...p,
-      downloadUrl: urls.find(u => u.key === p.s3Key)?.url ?? null,
+      downloadUrl: p.thumbnailS3Key ? null : (urls[i]?.url ?? null),
+      thumbnailUrl: p.thumbnailS3Key ? (urls[i]?.url ?? null) : null,
     }));
 
-    res.json({ success: true, data: { ...album, photos: photosWithUrls } });
+    // Include sub-album metadata so frontend can show the Sections tab
+    const subAlbums = await db.getSubAlbums(album.subAlbumIds ?? []);
+    res.json({ success: true, data: { ...album, photos: photosWithUrls, subAlbums } });
   } catch (error) {
     console.error('Error fetching album:', error);
     res.status(500).json({ success: false, error: 'Failed to fetch album' });
   }
 });
+
 
 // PUT /api/albums/:id
 router.put('/:id', async (req: Request, res: Response) => {
@@ -125,6 +130,46 @@ router.post('/:id/share', async (req: Request, res: Response) => {
   } catch (error) {
     console.error('Error sharing album:', error);
     res.status(500).json({ success: false, error: 'Failed to share album' });
+  }
+});
+
+// PUT /api/albums/:id/sub-albums — set the full ordered list of sub-album IDs
+router.put('/:id/sub-albums', async (req: Request, res: Response) => {
+  try {
+    const { subAlbumIds } = req.body;
+    if (!Array.isArray(subAlbumIds)) {
+      return res.status(400).json({ success: false, error: 'subAlbumIds must be an array' });
+    }
+    const album = await db.updateAlbum(req.params.id, req.user!.id, { subAlbumIds });
+    if (!album) return res.status(404).json({ success: false, error: 'Album not found or access denied' });
+    res.json({ success: true, data: album });
+  } catch (error) {
+    console.error('Error updating sub-albums:', error);
+    res.status(500).json({ success: false, error: 'Failed to update sub-albums' });
+  }
+});
+
+// GET /api/albums/:id/people — people grouped view for an album
+router.get('/:id/people', async (req: Request, res: Response) => {
+  try {
+    const album = await db.getAlbumById(req.params.id, req.user!.id);
+    if (!album) return res.status(404).json({ success: false, error: 'Album not found or access denied' });
+
+    const groups = await db.getPeopleInPhotoSet(album.photoIds, album.userId);
+
+    // Generate cover URLs for each person
+    const groupsWithUrls = await Promise.all(groups.map(async g => {
+      let coverUrl: string | null = null;
+      if (g.person.coverFaceS3Key) {
+        try { coverUrl = (await s3Service.getObjectUrl(g.person.coverFaceS3Key, 7200)).url; } catch { /* ignore */ }
+      }
+      return { person: { ...g.person, coverUrl }, photoIds: g.photoIds };
+    }));
+
+    res.json({ success: true, data: groupsWithUrls });
+  } catch (error) {
+    console.error('Error fetching album people:', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch album people' });
   }
 });
 

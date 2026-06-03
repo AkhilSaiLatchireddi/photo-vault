@@ -1,20 +1,29 @@
 import { useState, useEffect, Fragment } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { 
-  Plus, 
-  Trash2, 
+import {
+  Plus,
+  Trash2,
   Image as ImageIcon,
   X,
-  ArrowLeft
+  ArrowLeft,
+  Users,
+  LayoutGrid,
+  ChevronLeft,
+  FolderOpen,
+  Settings2,
 } from 'lucide-react';
 import { photoService } from '../services/photoService';
 import PhotoZoomViewer from '../components/PhotoZoomViewer';
 import Layout from '../components/layout/Layout';
+interface SubAlbumMeta { albumId: string; title: string; publicToken?: string; }
+
 interface Album {
   albumId: string;
   title: string;
   description?: string;
   photoIds: string[];
+  subAlbumIds?: string[];
+  subAlbums?: SubAlbumMeta[];
   isPublic: boolean;
   publicToken?: string;
   publicExpiresAt?: string;
@@ -38,6 +47,7 @@ interface Photo {
   height?: number;
   uploadedAt: string;
   downloadUrl?: string;
+  thumbnailUrl?: string;
 }
 export default function AlbumDetailPage() {
   const { albumId, photoId } = useParams<{ albumId: string; photoId?: string }>();
@@ -52,6 +62,26 @@ export default function AlbumDetailPage() {
   const [selectedPhotoIds, setSelectedPhotoIds] = useState<string[]>([]);
   const [selectedPhoto, setSelectedPhoto] = useState<Photo | null>(null);
   const [addingPhotos, setAddingPhotos] = useState(false);
+
+  // Sub-albums / Sections
+  const [showManageSections, setShowManageSections] = useState(false);
+  const [selectedSubAlbumIds, setSelectedSubAlbumIds] = useState<string[]>([]);
+  const [savingSections, setSavingSections] = useState(false);
+  const [allUserAlbums, setAllUserAlbums] = useState<{albumId:string;title:string;subAlbumIds?:string[]}[]>([]);
+  const [forbiddenSubAlbumIds, setForbiddenSubAlbumIds] = useState<Set<string>>(new Set());
+
+  // View mode
+  type ViewMode = 'photos' | 'videos' | 'people' | 'sections';
+  type PersonGroup = { person: { personId: string; name: string; coverUrl?: string; photoCount: number }; photoIds: string[] };
+  const [viewMode, setViewMode] = useState<ViewMode>('photos');
+  // People view
+  const [peopleGroups, setPeopleGroups] = useState<PersonGroup[]>([]);
+  const [peopleLoading, setPeopleLoading] = useState(false);
+  const [selectedPerson, setSelectedPerson] = useState<PersonGroup | null>(null);
+  // Sections — inline expanded view
+  const [expandedSection, setExpandedSection] = useState<{ sub: SubAlbumMeta; photos: Photo[] } | null>(null);
+  const [sectionLoading, setSectionLoading] = useState(false);
+
   useEffect(() => {
     if (albumId) {
       fetchAlbum();
@@ -76,8 +106,33 @@ export default function AlbumDetailPage() {
       setError(null);
       const response = await photoService.getAlbum(albumId);
       if (response.success) {
-        setAlbum(response.data);
-        setAlbumPhotos(response.data.photos || []);
+        const albumData = response.data;
+        setAlbum(albumData);
+
+        // Render immediately with own photos — don't block on sub-albums
+        const ownPhotos: Photo[] = albumData.photos || [];
+        setAlbumPhotos(ownPhotos);
+
+        // Fetch sub-album photos in the background and merge in as they arrive
+        const subAlbums: SubAlbumMeta[] = albumData.subAlbums || [];
+        if (subAlbums.length > 0) {
+          const seen = new Set(ownPhotos.map((p: Photo) => p.photoId));
+          for (const sub of subAlbums) {
+            photoService.getAlbum(sub.albumId)
+              .then(r => {
+                if (!r.success) return;
+                const newPhotos = (r.data.photos || []).filter((p: Photo) => {
+                  if (seen.has(p.photoId)) return false;
+                  seen.add(p.photoId);
+                  return true;
+                });
+                if (newPhotos.length > 0) {
+                  setAlbumPhotos(prev => [...prev, ...newPhotos]);
+                }
+              })
+              .catch(() => {});
+          }
+        }
       } else {
         setError('Failed to load album');
       }
@@ -98,6 +153,103 @@ export default function AlbumDetailPage() {
       console.error('Error fetching photos:', err);
     }
   };
+  const fetchPeople = async () => {
+    if (!albumId || peopleGroups.length > 0) return; // lazy — only fetch once
+    try {
+      setPeopleLoading(true);
+      const response = await photoService.getAlbumPeople(albumId);
+      if (response.success) setPeopleGroups(response.data);
+    } catch (err) {
+      console.error('Error fetching album people:', err);
+    } finally {
+      setPeopleLoading(false);
+    }
+  };
+
+  const openManageSections = async () => {
+    const currentIds = (album?.subAlbums ?? []).map((s: SubAlbumMeta) => s.albumId);
+    setSelectedSubAlbumIds(currentIds);
+
+    let albums = allUserAlbums;
+    if (allUserAlbums.length === 0) {
+      const r = await photoService.getAlbums();
+      if (r.success) {
+        albums = (r.data?.userAlbums ?? []).filter((a: any) => a.albumId !== albumId);
+        setAllUserAlbums(albums);
+      }
+    }
+
+    // Compute which albums CANNOT be sub-albums of current album (would create cycles)
+    // An album X is forbidden if:
+    //   1. X === current album (self)
+    //   2. current album is already (directly or transitively) a sub-album of X
+    const forbidden = new Set<string>();
+    forbidden.add(albumId!); // can't add self
+
+    // Build a map of albumId -> subAlbumIds for cycle detection
+    const subMap = new Map<string, string[]>();
+    for (const a of albums) {
+      subMap.set(a.albumId, a.subAlbumIds ?? []);
+    }
+
+    // DFS: find all ancestors of current album (albums that have currentAlbum as descendant)
+    const isDescendant = (root: string, target: string, visited = new Set<string>()): boolean => {
+      if (visited.has(root)) return false;
+      visited.add(root);
+      const children = subMap.get(root) ?? [];
+      if (children.includes(target)) return true;
+      return children.some(c => isDescendant(c, target, visited));
+    };
+
+    for (const a of albums) {
+      if (isDescendant(a.albumId, albumId!)) {
+        forbidden.add(a.albumId);
+      }
+    }
+
+    setForbiddenSubAlbumIds(forbidden);
+    setShowManageSections(true);
+  };
+
+  const openSection = async (sub: SubAlbumMeta) => {
+    if (expandedSection?.sub.albumId === sub.albumId) {
+      setExpandedSection(null); // collapse if already open
+      return;
+    }
+    try {
+      setSectionLoading(true);
+      const response = await photoService.getAlbum(sub.albumId);
+      if (response.success) {
+        setExpandedSection({ sub, photos: response.data.photos ?? [] });
+      }
+    } catch (e) {
+      console.error('Error loading section photos:', e);
+    } finally {
+      setSectionLoading(false);
+    }
+  };
+
+  const saveSections = async () => {
+    if (!albumId) return;
+    try {
+      setSavingSections(true);
+      await photoService.setSubAlbums(albumId, selectedSubAlbumIds);
+      await fetchAlbum(); // refresh to get updated subAlbums
+      setShowManageSections(false);
+    } catch (e) {
+      console.error('Error saving sections:', e);
+    } finally {
+      setSavingSections(false);
+    }
+  };
+
+  const handleViewMode = (mode: ViewMode) => {
+    setViewMode(mode);
+    setSelectedPerson(null);
+    setExpandedSection(null);
+    if (mode === 'people') fetchPeople();
+  };
+
   const addPhotosToAlbum = async () => {
     if (!album || selectedPhotoIds.length === 0) return;
     
@@ -140,11 +292,11 @@ export default function AlbumDetailPage() {
   };
   const handleOpenPhoto = (photo: Photo) => {
     setSelectedPhoto(photo);
-    navigate(`/albums/${albumId}/photos/${photo.photoId}`);
+    navigate(`/albums/${albumId}/photos/${photo.photoId}`, { replace: true });
   };
   const handleClosePhoto = () => {
     setSelectedPhoto(null);
-    navigate(`/albums/${albumId}`);
+    navigate(`/albums/${albumId}`, { replace: true });
   };
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString();
@@ -244,91 +396,306 @@ export default function AlbumDetailPage() {
           <div className="absolute -top-8 -right-8 w-24 h-24 bg-gradient-to-br from-blue-400 to-indigo-500 rounded-full opacity-20 blur-2xl animate-float"></div>
           
           <div className="relative bg-white/90 backdrop-blur-md rounded-3xl shadow-2xl border-2 border-white/50 overflow-hidden">
-            <div className="p-6 border-b border-gray-100/50 flex items-center justify-between bg-gradient-to-r from-cyan-50 via-blue-50 to-indigo-50">
+            <div className="p-6 border-b border-gray-100/50 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-gradient-to-r from-cyan-50 via-blue-50 to-indigo-50">
               <div className="flex items-center gap-3">
                 <div className="bg-gradient-to-br from-cyan-500 to-blue-600 p-2.5 rounded-xl shadow-md">
-                  <ImageIcon className="h-5 w-5 text-white" />
+                  {viewMode === 'people' ? <Users className="h-5 w-5 text-white" /> : <ImageIcon className="h-5 w-5 text-white" />}
                 </div>
                 <h3 className="text-xl font-bold bg-gradient-to-r from-cyan-600 to-blue-600 bg-clip-text text-transparent">
-                  Photos in Album
+                  {viewMode === 'people' ? (selectedPerson ? selectedPerson.person.name : 'People in Album') : 'Photos in Album'}
                 </h3>
               </div>
-              <button
-                onClick={() => setShowAddPhotos(true)}
-                className="relative group"
-              >
-                <div className="absolute -inset-0.5 bg-gradient-to-r from-cyan-600 to-blue-600 rounded-xl opacity-75 group-hover:opacity-100 blur transition duration-300"></div>
-                <div className="relative flex items-center px-4 py-2 bg-gradient-to-r from-cyan-500 to-blue-500 text-white rounded-xl hover:shadow-xl transition-all">
-                  <Plus className="h-4 w-4 mr-2" />
-                  Add Photos
+              <div className="flex items-center gap-3">
+                {/* View toggle */}
+                <div className="flex items-center bg-white rounded-xl border border-gray-200 p-1 shadow-sm flex-wrap gap-0.5">
+                  {([
+                    ['photos', 'Photos', <LayoutGrid className="h-4 w-4" />],
+                    ['videos', 'Videos', <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>],
+                    ['people', 'People', <Users className="h-4 w-4" />],
+                    ['sections', 'Sections', <FolderOpen className="h-4 w-4" />],
+                  ] as [ViewMode, string, React.ReactNode][]).map(([mode, label, icon]) => (
+                    <button
+                      key={mode}
+                      onClick={() => handleViewMode(mode)}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${viewMode === mode ? 'bg-gradient-to-r from-cyan-500 to-blue-500 text-white shadow-sm' : 'text-gray-600 hover:text-gray-900'}`}
+                    >
+                      {icon}{label}
+                    </button>
+                  ))}
                 </div>
-              </button>
+                <button
+                  onClick={() => setShowAddPhotos(true)}
+                  className="relative group"
+                >
+                  <div className="absolute -inset-0.5 bg-gradient-to-r from-cyan-600 to-blue-600 rounded-xl opacity-75 group-hover:opacity-100 blur transition duration-300"></div>
+                  <div className="relative flex items-center px-4 py-2 bg-gradient-to-r from-cyan-500 to-blue-500 text-white rounded-xl hover:shadow-xl transition-all">
+                    <Plus className="h-4 w-4 mr-2" />
+                    Add Photos
+                  </div>
+                </button>
+              </div>
             </div>
           
           <div className="p-6">
-            {albumPhotos.length > 0 ? (
-              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-                {albumPhotos.map((photo, index) => (
-                  <div 
-                    key={`album-photo-${photo.photoId || photo.filename || index}`} 
-                    className="group relative cursor-pointer"
-                    onClick={() => handleOpenPhoto(photo)}
-                  >
-                    <div className="aspect-square bg-gray-100 rounded-lg overflow-hidden">
-                      {photo.downloadUrl && photo.mimeType.startsWith('image/') ? (
-                        <img
-                          src={photo.downloadUrl}
-                          alt={photo.originalName}
-                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                        />
-                      ) : photo.downloadUrl && photo.mimeType.startsWith('video/') ? (
-                        <div className="w-full h-full bg-gray-900 flex items-center justify-center relative">
-                          <video src={photo.downloadUrl} className="w-full h-full object-cover" muted preload="metadata" />
-                          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                            <div className="bg-black/50 rounded-full p-2">
-                              <svg className="h-6 w-6 text-white" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+            {/* ── Photos view ── */}
+            {viewMode === 'photos' && (
+              albumPhotos.length > 0 ? (
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+                  {albumPhotos.map((photo, index) => (
+                    <div
+                      key={`album-photo-${photo.photoId || photo.filename || index}`}
+                      className="group relative cursor-pointer"
+                      onClick={() => handleOpenPhoto(photo)}
+                    >
+                      <div className="aspect-square bg-gray-100 rounded-lg overflow-hidden">
+                        {photo.downloadUrl && photo.mimeType.startsWith('image/') ? (
+                          <img src={photo.thumbnailUrl ?? photo.downloadUrl} alt={photo.originalName} loading="lazy" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+                        ) : photo.downloadUrl && photo.mimeType.startsWith('video/') ? (
+                          <div className="w-full h-full bg-gray-900 flex items-center justify-center relative">
+                            <video src={photo.downloadUrl} className="w-full h-full object-cover" muted preload="metadata" />
+                            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                              <div className="bg-black/50 rounded-full p-2">
+                                <svg className="h-6 w-6 text-white" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                              </div>
                             </div>
                           </div>
-                        </div>
-                      ) : (
-                        <div className="w-full h-full bg-gray-200 flex items-center justify-center">
-                          <ImageIcon className="h-8 w-8 text-gray-400" />
-                        </div>
-                      )}
+                        ) : (
+                          <div className="w-full h-full bg-gray-200 flex items-center justify-center">
+                            <ImageIcon className="h-8 w-8 text-gray-400" />
+                          </div>
+                        )}
+                      </div>
+                      <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                        <button onClick={(e) => { e.stopPropagation(); removePhotoFromAlbum(photo.photoId as string); }} className="bg-red-500/80 backdrop-blur-sm text-white p-2 rounded-full hover:bg-red-600" title="Remove from album">
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
+                      <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 to-transparent p-3 text-white">
+                        <p className="text-xs font-semibold truncate">{photo.originalName}</p>
+                      </div>
                     </div>
-                    <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          removePhotoFromAlbum((photo.photoId) as string);
-                        }}
-                        className="bg-red-500/80 backdrop-blur-sm text-white p-2 rounded-full hover:bg-red-600"
-                        title="Remove from album"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-16">
+                  <div className="bg-gray-100 p-8 rounded-full w-24 h-24 mx-auto mb-4 flex items-center justify-center">
+                    <ImageIcon className="h-12 w-12 text-gray-400" />
+                  </div>
+                  <h3 className="text-xl font-semibold text-gray-800">No photos in album</h3>
+                  <p className="text-gray-500 mt-2">Add some photos to get started.</p>
+                  <button onClick={() => setShowAddPhotos(true)} className="mt-4 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+                    <Plus className="h-5 w-5 mr-2 inline" />Add Photos
+                  </button>
+                </div>
+              )
+            )}
+
+            {/* ── Videos view ── */}
+            {viewMode === 'videos' && (() => {
+              const videos = albumPhotos.filter(p => p.mimeType?.startsWith('video/'));
+              return videos.length > 0 ? (
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+                  {videos.map((photo, index) => (
+                    <div key={`video-${photo.photoId || index}`} className="group relative cursor-pointer" onClick={() => handleOpenPhoto(photo)}>
+                      <div className="aspect-square bg-gray-900 rounded-lg overflow-hidden relative">
+                        <video src={photo.downloadUrl} className="w-full h-full object-cover" muted preload="metadata" />
+                        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                          <div className="bg-black/50 rounded-full p-3 group-hover:bg-black/70 transition-all">
+                            <svg className="h-7 w-7 text-white" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button onClick={e => { e.stopPropagation(); removePhotoFromAlbum(photo.photoId as string); }} className="bg-red-500/80 text-white p-2 rounded-full hover:bg-red-600">
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
+                      <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 to-transparent p-3 text-white opacity-0 group-hover:opacity-100 transition-opacity">
+                        <p className="text-xs font-semibold truncate">{photo.originalName}</p>
+                      </div>
                     </div>
-                    <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 to-transparent p-3 text-white">
-                      <p className="text-xs font-semibold truncate">{photo.originalName}</p>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-16">
+                  <div className="bg-gray-100 p-8 rounded-full w-24 h-24 mx-auto mb-4 flex items-center justify-center">
+                    <svg className="h-12 w-12 text-gray-400" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                  </div>
+                  <h3 className="text-xl font-semibold text-gray-800">No videos in this album</h3>
+                </div>
+              );
+            })()}
+
+            {/* ── Sections view ── */}
+            {viewMode === 'sections' && (
+              <div>
+                <div className="flex items-center justify-between mb-6">
+                  <p className="text-sm text-gray-500">Click a section to expand its photos inline.</p>
+                  <button onClick={openManageSections} className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-xl text-sm font-medium text-gray-700 hover:border-cyan-400 hover:text-cyan-700 transition-all shadow-sm">
+                    <Settings2 className="h-4 w-4" />Manage Sections
+                  </button>
+                </div>
+                {(album.subAlbums ?? []).length > 0 ? (
+                  <div className="space-y-4">
+                    {(album.subAlbums ?? []).map(sub => {
+                      const isOpen = expandedSection?.sub.albumId === sub.albumId;
+                      return (
+                        <div key={sub.albumId} className="rounded-2xl border border-gray-100 overflow-hidden shadow-sm">
+                          {/* Section header — click to expand */}
+                          <button
+                            onClick={() => openSection(sub)}
+                            className="w-full flex items-center justify-between p-4 bg-gradient-to-r from-cyan-50 to-blue-50 hover:from-cyan-100 hover:to-blue-100 transition-all"
+                          >
+                            <div className="flex items-center gap-3">
+                              <div className="bg-gradient-to-br from-cyan-500 to-blue-600 p-2 rounded-lg">
+                                <FolderOpen className="h-4 w-4 text-white" />
+                              </div>
+                              <span className="font-bold text-gray-900">{sub.title}</span>
+                            </div>
+                            <ChevronLeft className={`h-5 w-5 text-gray-500 transition-transform duration-200 ${isOpen ? '-rotate-90' : 'rotate-180'}`} />
+                          </button>
+
+                          {/* Inline photo grid */}
+                          {isOpen && (
+                            <div className="p-4 bg-white">
+                              {sectionLoading ? (
+                                <div className="flex items-center justify-center py-8">
+                                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-cyan-500"></div>
+                                </div>
+                              ) : expandedSection.photos.length > 0 ? (
+                                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+                                  {expandedSection.photos.map((photo, idx) => (
+                                    <div key={photo.photoId || idx} className="group relative cursor-pointer" onClick={() => handleOpenPhoto(photo)}>
+                                      <div className="aspect-square bg-gray-100 rounded-lg overflow-hidden">
+                                        {photo.downloadUrl && photo.mimeType?.startsWith('image/') ? (
+                                          <img src={photo.thumbnailUrl ?? photo.downloadUrl} alt={photo.originalName} loading="lazy" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+                                        ) : photo.downloadUrl && photo.mimeType?.startsWith('video/') ? (
+                                          <div className="w-full h-full bg-gray-900 relative flex items-center justify-center">
+                                            <video src={photo.downloadUrl} className="w-full h-full object-cover" muted preload="metadata" />
+                                            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                                              <div className="bg-black/50 rounded-full p-2"><svg className="h-5 w-5 text-white" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></div>
+                                            </div>
+                                          </div>
+                                        ) : (
+                                          <div className="w-full h-full bg-gray-200 flex items-center justify-center"><ImageIcon className="h-6 w-6 text-gray-400" /></div>
+                                        )}
+                                      </div>
+                                      <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 to-transparent p-2 opacity-0 group-hover:opacity-100 transition-opacity rounded-b-lg">
+                                        <p className="text-xs text-white truncate">{photo.originalName}</p>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              ) : (
+                                <p className="text-center text-sm text-gray-400 py-6">No photos in this section.</p>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="text-center py-16">
+                    <FolderOpen className="h-12 w-12 text-gray-300 mx-auto mb-3" />
+                    <h3 className="text-lg font-semibold text-gray-700">No sections yet</h3>
+                    <p className="text-sm text-gray-500 mt-1">Click "Manage Sections" to link sub-albums to this album.</p>
+                    <button onClick={openManageSections} className="mt-4 px-5 py-2.5 bg-cyan-500 text-white rounded-xl text-sm font-medium hover:bg-cyan-600 transition-colors">
+                      <Settings2 className="h-4 w-4 mr-2 inline" />Manage Sections
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ── People view ── */}
+            {viewMode === 'people' && (
+              peopleLoading ? (
+                <div className="flex items-center justify-center py-16">
+                  <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-cyan-600"></div>
+                </div>
+              ) : selectedPerson ? (
+                /* Person's photos inside the album */
+                <div>
+                  <button onClick={() => setSelectedPerson(null)} className="flex items-center gap-2 text-sm text-gray-500 hover:text-cyan-600 mb-5 transition-colors">
+                    <ChevronLeft className="h-4 w-4" />
+                    Back to People
+                  </button>
+                  <div className="flex items-center gap-3 mb-5">
+                    {selectedPerson.person.coverUrl ? (
+                      <img src={selectedPerson.person.coverUrl} alt={selectedPerson.person.name} className="w-12 h-12 rounded-full object-cover ring-2 ring-cyan-400" />
+                    ) : (
+                      <div className="w-12 h-12 rounded-full bg-gradient-to-br from-cyan-400 to-blue-500 flex items-center justify-center text-white font-bold text-lg">
+                        {selectedPerson.person.name.charAt(0).toUpperCase()}
+                      </div>
+                    )}
+                    <div>
+                      <p className="font-bold text-gray-900">{selectedPerson.person.name}</p>
+                      <p className="text-sm text-gray-500">{selectedPerson.photoIds.length} photos in this album</p>
                     </div>
                   </div>
-                ))}
-              </div>
-            ) : (
-              <div className="text-center py-16">
-                <div className="bg-gray-100 p-8 rounded-full w-24 h-24 mx-auto mb-4 flex items-center justify-center">
-                  <ImageIcon className="h-12 w-12 text-gray-400" />
+                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+                    {albumPhotos
+                      .filter(p => selectedPerson.photoIds.includes(p.photoId as string))
+                      .map((photo, index) => (
+                        <div key={`person-photo-${photo.photoId || index}`} className="group relative cursor-pointer" onClick={() => handleOpenPhoto(photo)}>
+                          <div className="aspect-square bg-gray-100 rounded-lg overflow-hidden">
+                            {photo.downloadUrl && photo.mimeType.startsWith('image/') ? (
+                              <img src={photo.thumbnailUrl ?? photo.downloadUrl} alt={photo.originalName} loading="lazy" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+                            ) : photo.downloadUrl && photo.mimeType.startsWith('video/') ? (
+                              <div className="w-full h-full bg-gray-900 relative flex items-center justify-center">
+                                <video src={photo.downloadUrl} className="w-full h-full object-cover" muted preload="metadata" />
+                                <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                                  <div className="bg-black/50 rounded-full p-2"><svg className="h-6 w-6 text-white" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></div>
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="w-full h-full bg-gray-200 flex items-center justify-center"><ImageIcon className="h-8 w-8 text-gray-400" /></div>
+                            )}
+                          </div>
+                          <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 to-transparent p-3 text-white opacity-0 group-hover:opacity-100 transition-opacity">
+                            <p className="text-xs font-semibold truncate">{photo.originalName}</p>
+                          </div>
+                        </div>
+                      ))}
+                  </div>
                 </div>
-                <h3 className="text-xl font-semibold text-gray-800">No photos in album</h3>
-                <p className="text-gray-500 mt-2">Add some photos to get started.</p>
-                <button
-                  onClick={() => setShowAddPhotos(true)}
-                  className="mt-4 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-                >
-                  <Plus className="h-5 w-5 mr-2 inline" />
-                  Add Photos
-                </button>
-              </div>
+              ) : peopleGroups.length > 0 ? (
+                /* People grid */
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-5">
+                  {peopleGroups.map(group => (
+                    <button
+                      key={group.person.personId}
+                      onClick={() => setSelectedPerson(group)}
+                      className="group flex flex-col items-center gap-2 p-3 rounded-2xl hover:bg-cyan-50 transition-all hover:shadow-md"
+                    >
+                      <div className="relative">
+                        {group.person.coverUrl ? (
+                          <img src={group.person.coverUrl} alt={group.person.name} className="w-20 h-20 rounded-full object-cover ring-4 ring-white group-hover:ring-cyan-300 shadow-md transition-all" />
+                        ) : (
+                          <div className="w-20 h-20 rounded-full bg-gradient-to-br from-cyan-400 to-blue-500 flex items-center justify-center text-white font-bold text-2xl ring-4 ring-white shadow-md">
+                            {group.person.name.charAt(0).toUpperCase()}
+                          </div>
+                        )}
+                        <span className="absolute -bottom-1 -right-1 bg-cyan-500 text-white text-xs font-bold rounded-full w-6 h-6 flex items-center justify-center shadow">
+                          {group.photoIds.length}
+                        </span>
+                      </div>
+                      <p className="text-sm font-semibold text-gray-800 group-hover:text-cyan-700 text-center transition-colors leading-tight">
+                        {group.person.name}
+                      </p>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-16">
+                  <div className="bg-gray-100 p-8 rounded-full w-24 h-24 mx-auto mb-4 flex items-center justify-center">
+                    <Users className="h-12 w-12 text-gray-400" />
+                  </div>
+                  <h3 className="text-xl font-semibold text-gray-800">No face data yet</h3>
+                  <p className="text-gray-500 mt-2">Go to the People page and run "Scan All" to detect faces in your photos.</p>
+                </div>
+              )
             )}
           </div>
         </div>
@@ -489,6 +856,58 @@ export default function AlbumDetailPage() {
           </div>
         </div>
       )}
+      {/* Manage Sections Modal */}
+      {showManageSections && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-gray-900">Manage Sections</h3>
+              <button onClick={() => setShowManageSections(false)} className="p-2 hover:bg-gray-100 rounded-lg"><X className="h-5 w-5 text-gray-500" /></button>
+            </div>
+            <p className="text-sm text-gray-500 mb-4">Select albums to show as sections inside this album. They'll appear in the Sections tab.</p>
+            <div className="max-h-72 overflow-y-auto space-y-2 mb-5">
+              {allUserAlbums.map(a => {
+                const selected = selectedSubAlbumIds.includes(a.albumId);
+                const forbidden = forbiddenSubAlbumIds.has(a.albumId);
+                return (
+                  <label
+                    key={a.albumId}
+                    className={`flex items-center gap-3 p-3 rounded-xl border transition-all ${
+                      forbidden
+                        ? 'border-gray-100 bg-gray-50 opacity-50 cursor-not-allowed'
+                        : selected
+                        ? 'border-cyan-400 bg-cyan-50 cursor-pointer'
+                        : 'border-gray-200 hover:border-gray-300 cursor-pointer'
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selected}
+                      disabled={forbidden}
+                      onChange={() => !forbidden && setSelectedSubAlbumIds(sel =>
+                        sel.includes(a.albumId) ? sel.filter(id => id !== a.albumId) : [...sel, a.albumId]
+                      )}
+                      className="w-4 h-4 accent-cyan-500"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <span className="text-sm font-medium text-gray-800">{a.title}</span>
+                      {forbidden && <span className="ml-2 text-xs text-red-400">Would create a loop</span>}
+                    </div>
+                  </label>
+                );
+              })}
+              {allUserAlbums.length === 0 && <p className="text-sm text-gray-400 text-center py-4">No other albums found.</p>}
+            </div>
+            <div className="flex justify-end gap-3">
+              <button onClick={() => setShowManageSections(false)} className="px-4 py-2 text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50 text-sm">Cancel</button>
+              <button onClick={saveSections} disabled={savingSections} className="px-4 py-2 bg-cyan-500 text-white rounded-lg hover:bg-cyan-600 text-sm font-medium disabled:opacity-50">
+                {savingSections ? 'Saving…' : 'Save Sections'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Photo Zoom Viewer */}
       {selectedPhoto && (
         <PhotoZoomViewer

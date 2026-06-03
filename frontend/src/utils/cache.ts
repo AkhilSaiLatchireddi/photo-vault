@@ -23,33 +23,21 @@ class CacheManager {
    * Get data from cache
    */
   get<T>(key: string): T | null {
-    // Try memory cache first
     const memEntry = this.memoryCache.get(key);
-    if (memEntry && this.isValid(memEntry)) {
-      console.log(`[Cache HIT - Memory] ${key}`);
-      return memEntry.data;
-    }
+    if (memEntry && this.isValid(memEntry)) return memEntry.data;
 
-    // Try localStorage
     try {
       const stored = localStorage.getItem(`cache_${key}`);
       if (stored) {
         const entry: CacheEntry<T> = JSON.parse(stored);
         if (this.isValid(entry)) {
-          console.log(`[Cache HIT - Storage] ${key}`);
-          // Restore to memory cache
           this.memoryCache.set(key, entry);
           return entry.data;
-        } else {
-          // Expired - remove
-          localStorage.removeItem(`cache_${key}`);
         }
+        localStorage.removeItem(`cache_${key}`);
       }
-    } catch (error) {
-      console.error('[Cache] Error reading from localStorage:', error);
-    }
+    } catch { /* ignore */ }
 
-    console.log(`[Cache MISS] ${key}`);
     return null;
   }
 
@@ -69,16 +57,9 @@ class CacheManager {
     // Store in memory
     this.memoryCache.set(key, entry);
 
-    // Store in localStorage if enabled
     if (useLocalStorage) {
-      try {
-        localStorage.setItem(`cache_${key}`, JSON.stringify(entry));
-      } catch (error) {
-        console.error('[Cache] Error writing to localStorage:', error);
-      }
+      try { localStorage.setItem(`cache_${key}`, JSON.stringify(entry)); } catch { /* ignore */ }
     }
-
-    console.log(`[Cache SET] ${key} (TTL: ${ttl / 1000}s)`);
   }
 
   /**
@@ -86,12 +67,7 @@ class CacheManager {
    */
   invalidate(key: string): void {
     this.memoryCache.delete(key);
-    try {
-      localStorage.removeItem(`cache_${key}`);
-    } catch (error) {
-      console.error('[Cache] Error removing from localStorage:', error);
-    }
-    console.log(`[Cache INVALIDATE] ${key}`);
+    try { localStorage.removeItem(`cache_${key}`); } catch { /* ignore */ }
   }
 
   /**
@@ -106,20 +82,11 @@ class CacheManager {
       }
     });
     keysToDelete.forEach(key => this.memoryCache.delete(key));
-
-    // Invalidate localStorage
     try {
-      const keys = Object.keys(localStorage);
-      keys.forEach(key => {
-        if (key.startsWith('cache_') && key.includes(pattern)) {
-          localStorage.removeItem(key);
-        }
+      Object.keys(localStorage).forEach(key => {
+        if (key.startsWith('cache_') && key.includes(pattern)) localStorage.removeItem(key);
       });
-    } catch (error) {
-      console.error('[Cache] Error invalidating pattern:', error);
-    }
-
-    console.log(`[Cache INVALIDATE PATTERN] ${pattern} (${keysToDelete.length} entries)`);
+    } catch { /* ignore */ }
   }
 
   /**
