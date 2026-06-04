@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth0 } from '@auth0/auth0-react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Camera, Download, Trash2, Image, AlertCircle, BarChart, Film } from 'lucide-react';
@@ -76,12 +76,18 @@ export default function HomePage() {
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [stats, setStats] = useState<PhotoStats | null>(null);
   const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [nextKey, setNextKey] = useState<string | null>(null);
+  const [hasMore, setHasMore] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedPhoto, setSelectedPhoto] = useState<Photo | null>(null);
   const [displayName, setDisplayName] = useState<string>('');
   type MediaFilter = 'all' | 'photos' | 'videos';
   const [mediaFilter, setMediaFilter] = useState<MediaFilter>('all');
+  // Sentinel div at bottom of grid — IntersectionObserver triggers next page load
+  const sentinelRef = useRef<HTMLDivElement>(null);
+  const nextKeyRef = useRef<string | null>(null);
 
   debugLog('👤 Auth0 user data:', {
     hasUser: !!user,
@@ -106,35 +112,37 @@ export default function HomePage() {
     }
   };
 
-  // Fetch photos from backend
-  const fetchPhotos = async () => {
-    setLoading(true);
+  // Fetch one page of photos — appends to existing list when loading more
+  const fetchPhotos = useCallback(async (cursor?: string | null, replace = false) => {
+    if (replace) setLoading(true); else setLoadingMore(true);
     try {
       const token = await getToken();
-      if (!token) {
-        throw new Error('Unable to get authentication token');
-      }
+      if (!token) throw new Error('Unable to get authentication token');
 
-      const response = await fetch(`${API_BASE_URL}/api/files`, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
+      const url = new URL(`${API_BASE_URL}/api/files`);
+      if (cursor) url.searchParams.set('nextKey', cursor);
+
+      const response = await fetch(url.toString(), {
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
       });
-
       const data = await response.json();
-      
+
       if (data.success) {
-        setPhotos(data.data.photos || []);
+        const incoming: Photo[] = data.data.photos || [];
+        setPhotos(prev => replace ? incoming : [...prev, ...incoming]);
+        const next = data.data.nextKey ?? null;
+        setNextKey(next);
+        setHasMore(!!next);
       } else {
         setError(data.error || 'Failed to fetch photos');
       }
-    } catch (err) {
+    } catch {
       setError('Failed to connect to server');
     } finally {
       setLoading(false);
+      setLoadingMore(false);
     }
-  };
+  }, []);
 
   // Fetch user statistics
   const fetchStats = async () => {
@@ -228,7 +236,9 @@ export default function HomePage() {
 
       // Refresh photos and stats
       photoService.invalidatePhotosCache();
-      await Promise.all([fetchPhotos(), fetchStats()]);
+      setNextKey(null);
+      setHasMore(true);
+      await Promise.all([fetchPhotos(null, true), fetchStats()]);
       
       // Reset file input
       event.target.value = '';
@@ -319,10 +329,31 @@ export default function HomePage() {
     navigate('/', { replace: true });
   };
 
+  // Keep refs in sync — observer reads from refs, never from stale closures
+  useEffect(() => { nextKeyRef.current = nextKey; }, [nextKey]);
+  const loadingMoreRef = useRef(false);
+  useEffect(() => { loadingMoreRef.current = loadingMore; }, [loadingMore]);
+
+  // IntersectionObserver — created once, stable via refs
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    if (!sentinel) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && nextKeyRef.current && !loadingMoreRef.current) {
+          fetchPhotos(nextKeyRef.current, false);
+        }
+      },
+      { rootMargin: '600px' }
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, []); // empty deps — stable via refs, never recreated
+
   // Load data on component mount
   useEffect(() => {
     if (user) {
-      fetchPhotos();
+      fetchPhotos(null, true); // first page, replace
       fetchStats();
       // Fetch DB profile for display name
       getToken().then(token => {
@@ -501,7 +532,7 @@ export default function HomePage() {
                         className="aspect-square bg-gradient-to-br from-gray-100 to-gray-200 rounded-xl overflow-hidden cursor-pointer shadow-md hover:shadow-2xl transition-all duration-500 ring-2 ring-transparent hover:ring-indigo-400 hover:scale-110"
                         onClick={() => handleOpenPhoto(photo)}
                       >
-                        {photo.downloadUrl && photo.mimeType.startsWith('image/') ? (
+                        {(photo.thumbnailUrl || photo.downloadUrl) && photo.mimeType.startsWith('image/') ? (
                           <img
                             src={photo.thumbnailUrl ?? photo.downloadUrl}
                             alt={photo.originalName}
@@ -560,6 +591,17 @@ export default function HomePage() {
                     {mediaFilter === 'all' ? 'Upload your first photo or video to see it here.' : `Switch to "All" to see everything.`}
                   </p>
                 </div>
+              )}
+
+              {/* Infinite scroll sentinel + loading indicator */}
+              <div ref={sentinelRef} className="h-4" />
+              {loadingMore && (
+                <div className="flex justify-center py-6">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-500"></div>
+                </div>
+              )}
+              {!hasMore && photos.length > 0 && (
+                <p className="text-center text-xs text-gray-400 py-4">All {photos.length} items loaded</p>
               )}
             </div>
           </div>

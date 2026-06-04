@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Camera, Image as ImageIcon, AlertCircle, ExternalLink, ArrowLeft, Heart, Users, LayoutGrid, ChevronLeft } from 'lucide-react';
 import { photoService } from '../services/photoService';
@@ -70,18 +70,59 @@ export default function PublicAlbumViewer() {
   const [peopleGroups, setPeopleGroups] = useState<PersonGroup[]>([]);
   const [peopleLoading, setPeopleLoading] = useState(false);
   const [selectedPerson, setSelectedPerson] = useState<PersonGroup | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const pageRef = useRef(1);
+  const hasMoreRef = useRef(false);
+  const tokenRef = useRef<string | undefined>(undefined);
+  const sentinelRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (token) fetchPublicAlbum(token);
+    if (token) { tokenRef.current = token; fetchPublicAlbum(token); }
   }, [token]);
+
+  // IntersectionObserver for public album infinite scroll
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    if (!sentinel) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && hasMoreRef.current && tokenRef.current) {
+          const nextPage = pageRef.current + 1;
+          hasMoreRef.current = false; // prevent double-fire
+          setLoadingMore(true);
+          photoService.getPublicAlbumPage(tokenRef.current, nextPage, 20)
+            .then(r => {
+              if (r.success) {
+                setAlbum(prev => prev ? { ...prev, photos: [...prev.photos, ...(r.data.photos || [])] } : prev);
+                const more = r.data.hasMore ?? false;
+                hasMoreRef.current = more;
+                setHasMore(more);
+                pageRef.current = nextPage;
+              }
+            })
+            .catch(() => {})
+            .finally(() => setLoadingMore(false));
+        }
+      },
+      { rootMargin: '600px' }
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, []);
 
   const fetchPublicAlbum = async (publicToken: string) => {
     try {
       setLoading(true);
       setError(null);
-      const response = await photoService.getPublicAlbum(publicToken);
+      // First page only — fast load
+      const response = await photoService.getPublicAlbumPage(publicToken, 1, 20);
       if (response.success) {
         setAlbum(response.data);
+        const more = response.data.hasMore ?? false;
+        setHasMore(more);
+        hasMoreRef.current = more;
+        pageRef.current = 1;
       } else {
         setError('Failed to load album');
       }
@@ -335,7 +376,20 @@ export default function PublicAlbumViewer() {
       <div className="max-w-7xl mx-auto px-6 py-6">
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
           {/* Photos view */}
-          {viewMode === 'photos' && <PhotoGrid photos={album.photos} onSelect={setSelectedPhoto} />}
+          {viewMode === 'photos' && (
+            <>
+              <PhotoGrid photos={album.photos} onSelect={setSelectedPhoto} />
+              <div ref={sentinelRef} className="h-4" />
+              {loadingMore && (
+                <div className="flex justify-center py-4">
+                  <div className="animate-spin rounded-full h-7 w-7 border-b-2 border-pink-500" />
+                </div>
+              )}
+              {!hasMore && album.photos.length > 0 && (
+                <p className="text-center text-xs text-gray-400 py-3">All {album.photos.length} photos loaded</p>
+              )}
+            </>
+          )}
 
           {/* People view */}
           {viewMode === 'people' && (
@@ -434,7 +488,7 @@ function PhotoGrid({ photos, onSelect }: { photos: PublicPhoto[]; onSelect: (p: 
           onClick={() => onSelect(photo)}
         >
           <div className="aspect-square bg-gray-100 rounded-lg overflow-hidden">
-            {photo.downloadUrl && photo.mimeType.startsWith('image/') ? (
+            {(photo.thumbnailUrl || photo.downloadUrl) && photo.mimeType?.startsWith('image/') ? (
               <img
                 src={photo.thumbnailUrl ?? photo.downloadUrl}
                 alt={photo.originalName}

@@ -204,19 +204,27 @@ export async function deletePhoto(photoId: string, userId: string): Promise<bool
 }
 
 export async function getPhotoStats(userId: string): Promise<{ totalPhotos: number; totalSize: number }> {
-  // For stats we do a query on the GSI — acceptable for small-medium collections
-  const res = await db.send(new QueryCommand({
-    TableName: TABLE.PHOTOS,
-    IndexName: 'userId-uploadedAt-index',
-    KeyConditionExpression: 'userId = :uid',
-    ExpressionAttributeValues: { ':uid': userId },
-    Select: 'ALL_PROJECTED_ATTRIBUTES',
-  }));
-  const photos = (res.Items ?? []) as Photo[];
-  return {
-    totalPhotos: photos.length,
-    totalSize: photos.reduce((sum, p) => sum + (p.fileSize || 0), 0),
-  };
+  // Must paginate — DynamoDB Query returns max 1MB per call; with 8k+ photos we need all pages
+  let totalPhotos = 0;
+  let totalSize = 0;
+  let lastKey: Record<string, unknown> | undefined;
+
+  do {
+    const res = await db.send(new QueryCommand({
+      TableName: TABLE.PHOTOS,
+      IndexName: 'userId-uploadedAt-index',
+      KeyConditionExpression: 'userId = :uid',
+      ExpressionAttributeValues: { ':uid': userId },
+      ProjectionExpression: 'photoId, fileSize',
+      ExclusiveStartKey: lastKey,
+    }));
+    const items = (res.Items ?? []) as { fileSize?: number }[];
+    totalPhotos += items.length;
+    totalSize += items.reduce((sum, p) => sum + (p.fileSize || 0), 0);
+    lastKey = res.LastEvaluatedKey;
+  } while (lastKey);
+
+  return { totalPhotos, totalSize };
 }
 
 // ─── Albums ───────────────────────────────────────────────────────────────────

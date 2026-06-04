@@ -15,7 +15,13 @@ router.get('/:token', async (req: Request, res: Response) => {
     const album = await db.getAlbumByToken(token);
     if (!album) return res.status(404).json({ success: false, error: 'Album not found or expired' });
 
-    const photos = await db.getPhotosByIds(album.photoIds);
+    const PAGE_SIZE = parseInt(req.query.limit as string) || 20;
+    const page = parseInt(req.query.page as string) || 1;
+    const start = (page - 1) * PAGE_SIZE;
+    const pageIds = album.photoIds.slice(start, start + PAGE_SIZE);
+    const hasMore = start + PAGE_SIZE < album.photoIds.length;
+
+    const photos = await db.getPhotosByIds(pageIds);
     const listingKeys = photos.map(p => p.thumbnailS3Key ?? p.s3Key);
     const { urls } = await s3Service.getBatchObjectUrls(listingKeys, 7200);
     const photosWithUrls = photos.map((p, i) => ({
@@ -24,7 +30,6 @@ router.get('/:token', async (req: Request, res: Response) => {
       thumbnailUrl: p.thumbnailS3Key ? (urls[i]?.url ?? null) : null,
     }));
 
-    // Resolve sub-albums from the proper subAlbumIds field (works for any album)
     const subAlbumMeta = await db.getSubAlbums(album.subAlbumIds ?? []);
     const childAlbums = subAlbumMeta
       .filter(a => a.publicToken)
@@ -43,7 +48,11 @@ router.get('/:token', async (req: Request, res: Response) => {
         description: album.description,
         createdAt: album.createdAt,
         photos: photosWithUrls,
-        photoCount: photosWithUrls.length,
+        photoCount: album.photoIds.length,
+        page,
+        pageSize: PAGE_SIZE,
+        totalPhotos: album.photoIds.length,
+        hasMore,
         childAlbums,
         isMasterAlbum: childAlbums.length > 0,
       },

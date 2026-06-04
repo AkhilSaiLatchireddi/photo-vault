@@ -263,8 +263,8 @@ class PhotoService {
         setTimeout(() => reject(new Error('Request timed out after 15 seconds')), 15000)
       );
       
-      // Make the request with improved error handling and timeout
-      const fetchPromise = fetch(`${this.apiBaseUrl}/api/albums/${albumId}`, {
+      // First page only — keeps response fast
+      const fetchPromise = fetch(`${this.apiBaseUrl}/api/albums/${albumId}?page=1&limit=20`, {
         method: 'GET',
         credentials: 'include',
         headers: {
@@ -332,6 +332,30 @@ class PhotoService {
       console.error('Error in getAlbum:', err);
       throw err;
     }
+  }
+
+  // Fetch a specific page of photos for an album (no cache — always fresh)
+  async getAlbumPage(albumId: string, page: number, limit = 20) {
+    const token = await this.getToken();
+    if (!token) throw new Error('Authentication token missing');
+    const response = await fetch(
+      `${this.apiBaseUrl}/api/albums/${albumId}?page=${page}&limit=${limit}`,
+      { headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' } }
+    );
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const data = await response.json();
+    return { success: true, data: data.data };
+  }
+
+  // Fetch a specific page of photos for a public album (no auth, no cache)
+  async getPublicAlbumPage(token: string, page: number, limit = 20) {
+    const response = await fetch(
+      `${this.apiBaseUrl}/api/public/albums/${token}?page=${page}&limit=${limit}`,
+      { headers: { 'Content-Type': 'application/json' } }
+    );
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const data = await response.json();
+    return { success: true, data: data.data };
   }
 
   async updateAlbum(albumId: string, updateData: { title?: string; description?: string; coverPhotoId?: string }) {
@@ -564,11 +588,9 @@ class PhotoService {
 
   // Public album access (no authentication)
   async getPublicAlbum(publicToken: string) {
-    const response = await fetch(`${this.apiBaseUrl}/api/public/albums/${publicToken}`, {
+    const response = await fetch(`${this.apiBaseUrl}/api/public/albums/${publicToken}?page=1&limit=20`, {
       method: 'GET',
-      headers: {
-        'Content-Type': 'application/json'
-      },
+      headers: { 'Content-Type': 'application/json' },
     });
 
     if (!response.ok) {

@@ -25,6 +25,7 @@ interface Photo {
   height?: number;
   uploadedAt: string;
   downloadUrl?: string;
+  thumbnailUrl?: string;
   metadata?: any;
 }
 
@@ -449,7 +450,7 @@ export default function PhotoDashboard() {
                       className="aspect-square bg-gray-100 rounded-lg overflow-hidden cursor-pointer"
                       onClick={() => setSelectedPhoto(photo)}
                     >
-                      {photo.downloadUrl && photo.mimeType.startsWith('image/') ? (
+                      {(photo.thumbnailUrl || photo.downloadUrl) && photo.mimeType?.startsWith('image/') ? (
                         <img
                           src={photo.downloadUrl}
                           alt={photo.originalName}

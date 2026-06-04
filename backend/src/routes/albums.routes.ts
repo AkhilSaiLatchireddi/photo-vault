@@ -55,13 +55,20 @@ router.post('/', async (req: Request, res: Response) => {
   }
 });
 
-// GET /api/albums/:id
+// GET /api/albums/:id — returns album metadata + first page of photos
+// GET /api/albums/:id?page=2&limit=20 — returns next pages
 router.get('/:id', async (req: Request, res: Response) => {
   try {
     const album = await db.getAlbumById(req.params.id, req.user!.id);
     if (!album) return res.status(404).json({ success: false, error: 'Album not found or access denied' });
 
-    const photos = await db.getPhotosByIds(album.photoIds);
+    const PAGE_SIZE = parseInt(req.query.limit as string) || 20;
+    const page = parseInt(req.query.page as string) || 1;
+    const start = (page - 1) * PAGE_SIZE;
+    const pageIds = album.photoIds.slice(start, start + PAGE_SIZE);
+    const hasMore = start + PAGE_SIZE < album.photoIds.length;
+
+    const photos = await db.getPhotosByIds(pageIds);
     const listingKeys = photos.map(p => p.thumbnailS3Key ?? p.s3Key);
     const { urls } = await s3Service.getBatchObjectUrls(listingKeys, 7200);
     const photosWithUrls = photos.map((p, i) => ({
@@ -70,9 +77,20 @@ router.get('/:id', async (req: Request, res: Response) => {
       thumbnailUrl: p.thumbnailS3Key ? (urls[i]?.url ?? null) : null,
     }));
 
-    // Include sub-album metadata so frontend can show the Sections tab
     const subAlbums = await db.getSubAlbums(album.subAlbumIds ?? []);
-    res.json({ success: true, data: { ...album, photos: photosWithUrls, subAlbums } });
+    res.json({
+      success: true,
+      data: {
+        ...album,
+        photos: photosWithUrls,
+        subAlbums,
+        // Pagination metadata
+        page,
+        pageSize: PAGE_SIZE,
+        totalPhotos: album.photoIds.length,
+        hasMore,
+      }
+    });
   } catch (error) {
     console.error('Error fetching album:', error);
     res.status(500).json({ success: false, error: 'Failed to fetch album' });

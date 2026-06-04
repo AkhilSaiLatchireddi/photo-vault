@@ -23,7 +23,7 @@ function formatFileSize(bytes: number): string {
 router.get('/', async (req: Request, res: Response) => {
   try {
     const userId = req.user!.id;
-    const limit = parseInt(req.query.limit as string) || 200;
+    const limit = Math.min(parseInt(req.query.limit as string) || 50, 100); // max 100 per page
     const lastKey = req.query.nextKey ? JSON.parse(decodeURIComponent(req.query.nextKey as string)) : undefined;
 
     const { photos, nextKey } = await db.getUserPhotos(userId, limit, lastKey);

@@ -1,4 +1,4 @@
-import { useState, useEffect, Fragment } from 'react';
+import { useState, useEffect, Fragment, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   Plus,
@@ -57,6 +57,14 @@ export default function AlbumDetailPage() {
   const [albumPhotos, setAlbumPhotos] = useState<Photo[]>([]);
   const [allPhotos, setAllPhotos] = useState<Photo[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [, setPhotoPage] = useState(1);
+  const [totalPhotos, setTotalPhotos] = useState(0);
+  const [hasMorePhotos, setHasMorePhotos] = useState(false);
+  const photoPageRef = useRef(1);
+  const hasMoreRef = useRef(false);
+  const sentinelRef = useRef<HTMLDivElement>(null);
+  const loadMoreRef = useRef<() => void>(() => {});
   const [error, setError] = useState<string | null>(null);
   const [showAddPhotos, setShowAddPhotos] = useState(false);
   const [selectedPhotoIds, setSelectedPhotoIds] = useState<string[]>([]);
@@ -99,6 +107,7 @@ export default function AlbumDetailPage() {
       setSelectedPhoto(null);
     }
   }, [photoId, albumPhotos]);
+  // Load first page — fast (20 photos only)
   const fetchAlbum = async () => {
     if (!albumId) return;
     try {
@@ -108,31 +117,13 @@ export default function AlbumDetailPage() {
       if (response.success) {
         const albumData = response.data;
         setAlbum(albumData);
-
-        // Render immediately with own photos — don't block on sub-albums
-        const ownPhotos: Photo[] = albumData.photos || [];
-        setAlbumPhotos(ownPhotos);
-
-        // Fetch sub-album photos in the background and merge in as they arrive
-        const subAlbums: SubAlbumMeta[] = albumData.subAlbums || [];
-        if (subAlbums.length > 0) {
-          const seen = new Set(ownPhotos.map((p: Photo) => p.photoId));
-          for (const sub of subAlbums) {
-            photoService.getAlbum(sub.albumId)
-              .then(r => {
-                if (!r.success) return;
-                const newPhotos = (r.data.photos || []).filter((p: Photo) => {
-                  if (seen.has(p.photoId)) return false;
-                  seen.add(p.photoId);
-                  return true;
-                });
-                if (newPhotos.length > 0) {
-                  setAlbumPhotos(prev => [...prev, ...newPhotos]);
-                }
-              })
-              .catch(() => {});
-          }
-        }
+        setAlbumPhotos(albumData.photos || []);
+        setTotalPhotos(albumData.totalPhotos ?? albumData.photoIds?.length ?? 0);
+        const more = albumData.hasMore ?? false;
+        setHasMorePhotos(more);
+        hasMoreRef.current = more;
+        photoPageRef.current = 1;
+        setPhotoPage(1);
       } else {
         setError('Failed to load album');
       }
@@ -143,6 +134,32 @@ export default function AlbumDetailPage() {
       setLoading(false);
     }
   };
+
+  // Stable ref so the IntersectionObserver never captures a stale closure
+  const loadMorePhotos = () => {
+    if (!albumId || !hasMoreRef.current) return;
+    const nextPage = photoPageRef.current + 1;
+    hasMoreRef.current = false; // prevent double-fire immediately
+    setLoadingMore(true);
+    photoService.getAlbumPage(albumId, nextPage, 20)
+      .then(response => {
+        if (!response.success) return;
+        const newPhotos: Photo[] = response.data.photos || [];
+        setAlbumPhotos(prev => {
+          const seen = new Set(prev.map(p => p.photoId));
+          return [...prev, ...newPhotos.filter(p => !seen.has(p.photoId))];
+        });
+        const more = response.data.hasMore ?? false;
+        hasMoreRef.current = more;
+        setHasMorePhotos(more);
+        photoPageRef.current = nextPage;
+        setPhotoPage(nextPage);
+      })
+      .catch(err => console.error('Error loading more photos:', err))
+      .finally(() => setLoadingMore(false));
+  };
+  loadMoreRef.current = loadMorePhotos;
+
   const fetchAllPhotos = async () => {
     try {
       const response = await photoService.getPhotos();
@@ -153,6 +170,19 @@ export default function AlbumDetailPage() {
       console.error('Error fetching photos:', err);
     }
   };
+
+  // IntersectionObserver — created once per album, calls via ref (always fresh)
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    if (!sentinel) return;
+    const observer = new IntersectionObserver(
+      (entries) => { if (entries[0].isIntersecting) loadMoreRef.current(); },
+      { rootMargin: '600px' }
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [albumId]); // no loadingMore dependency — stable via ref
+
   const fetchPeople = async () => {
     if (!albumId || peopleGroups.length > 0) return; // lazy — only fetch once
     try {
@@ -458,7 +488,7 @@ export default function AlbumDetailPage() {
                       onClick={() => handleOpenPhoto(photo)}
                     >
                       <div className="aspect-square bg-gray-100 rounded-lg overflow-hidden">
-                        {photo.downloadUrl && photo.mimeType.startsWith('image/') ? (
+                        {(photo.thumbnailUrl || photo.downloadUrl) && photo.mimeType?.startsWith('image/') ? (
                           <img src={photo.thumbnailUrl ?? photo.downloadUrl} alt={photo.originalName} loading="lazy" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
                         ) : photo.downloadUrl && photo.mimeType.startsWith('video/') ? (
                           <div className="w-full h-full bg-gray-900 flex items-center justify-center relative">
@@ -507,6 +537,23 @@ export default function AlbumDetailPage() {
                   </button>
                 </div>
               )
+            )}
+
+            {/* Infinite scroll sentinel for photos tab */}
+            {viewMode === 'photos' && (
+              <>
+                <div ref={sentinelRef} className="h-4" />
+                {loadingMore && (
+                  <div className="flex justify-center py-4">
+                    <div className="animate-spin rounded-full h-7 w-7 border-b-2 border-cyan-500" />
+                  </div>
+                )}
+                {!hasMorePhotos && albumPhotos.length > 0 && (
+                  <p className="text-center text-xs text-gray-400 py-3">
+                    All {totalPhotos} photos loaded
+                  </p>
+                )}
+              </>
             )}
 
             {/* ── Videos view ── */}
@@ -586,7 +633,7 @@ export default function AlbumDetailPage() {
                                   {expandedSection.photos.map((photo, idx) => (
                                     <div key={photo.photoId || idx} className="group relative cursor-pointer" onClick={() => handleOpenPhoto(photo)}>
                                       <div className="aspect-square bg-gray-100 rounded-lg overflow-hidden">
-                                        {photo.downloadUrl && photo.mimeType?.startsWith('image/') ? (
+                                        {(photo.thumbnailUrl || photo.downloadUrl) && photo.mimeType?.startsWith('image/') ? (
                                           <img src={photo.thumbnailUrl ?? photo.downloadUrl} alt={photo.originalName} loading="lazy" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
                                         ) : photo.downloadUrl && photo.mimeType?.startsWith('video/') ? (
                                           <div className="w-full h-full bg-gray-900 relative flex items-center justify-center">
@@ -659,7 +706,7 @@ export default function AlbumDetailPage() {
                       .map((photo, index) => (
                         <div key={`person-photo-${photo.photoId || index}`} className="group relative cursor-pointer" onClick={() => handleOpenPhoto(photo)}>
                           <div className="aspect-square bg-gray-100 rounded-lg overflow-hidden">
-                            {photo.downloadUrl && photo.mimeType.startsWith('image/') ? (
+                            {(photo.thumbnailUrl || photo.downloadUrl) && photo.mimeType?.startsWith('image/') ? (
                               <img src={photo.thumbnailUrl ?? photo.downloadUrl} alt={photo.originalName} loading="lazy" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
                             ) : photo.downloadUrl && photo.mimeType.startsWith('video/') ? (
                               <div className="w-full h-full bg-gray-900 relative flex items-center justify-center">
@@ -785,7 +832,7 @@ export default function AlbumDetailPage() {
                               }
                             }}
                           >
-                            {photo.downloadUrl && photo.mimeType?.startsWith('image/') ? (
+                            {(photo.thumbnailUrl || photo.downloadUrl) && photo.mimeType?.startsWith('image/') ? (
                               <img
                                 src={photo.downloadUrl}
                                 alt={photo.originalName}
