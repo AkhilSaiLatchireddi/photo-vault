@@ -65,6 +65,9 @@ export default function AlbumDetailPage() {
   const [hasMorePhotos, setHasMorePhotos] = useState(false);
   const photoPageRef = useRef(1);
   const hasMoreRef = useRef(false);
+  // For aggregated parent albums: per-sub-album page cursors
+  const subAlbumPagesRef = useRef<Record<string, number>>({}); // albumId -> last page fetched
+  const subAlbumHasMoreRef = useRef<Record<string, boolean>>({}); // albumId -> hasMore
   const sentinelRef = useRef<HTMLDivElement>(null);
   const loadMoreRef = useRef<() => void>(() => {});
   const [error, setError] = useState<string | null>(null);
@@ -93,9 +96,12 @@ export default function AlbumDetailPage() {
   const [peopleGroups, setPeopleGroups] = useState<PersonGroup[]>([]);
   const [peopleLoading, setPeopleLoading] = useState(false);
   const [selectedPerson, setSelectedPerson] = useState<PersonGroup | null>(null);
-  // Sections — inline expanded view
-  const [expandedSection, setExpandedSection] = useState<{ sub: SubAlbumMeta; photos: Photo[] } | null>(null);
+  // Sections — inline expanded view with pagination
+  const [expandedSection, setExpandedSection] = useState<{ sub: SubAlbumMeta; photos: Photo[]; page: number; hasMore: boolean } | null>(null);
   const [sectionLoading, setSectionLoading] = useState(false);
+  const [sectionLoadingMore, setSectionLoadingMore] = useState(false);
+  const sectionSentinelRef = useRef<HTMLDivElement>(null);
+  const sectionLoadMoreRef = useRef<() => void>(() => {});
 
   useEffect(() => {
     if (albumId) {
@@ -139,12 +145,19 @@ export default function AlbumDetailPage() {
           const merged: Photo[] = [];
           let mergedTotal = 0;
           let anyMore = false;
-          pages.forEach(p => {
-            if (!p) return;
+          const newSubPages: Record<string, number> = {};
+          const newSubHasMore: Record<string, boolean> = {};
+          subAlbums.forEach((sub, i) => {
+            const p = pages[i];
+            newSubPages[sub.albumId] = 1;
+            if (!p) { newSubHasMore[sub.albumId] = false; return; }
             merged.push(...(p.data.photos ?? []));
             mergedTotal += p.data.totalPhotos ?? 0;
+            newSubHasMore[sub.albumId] = p.data.hasMore ?? false;
             if (p.data.hasMore) anyMore = true;
           });
+          subAlbumPagesRef.current = newSubPages;
+          subAlbumHasMoreRef.current = newSubHasMore;
           const seen = new Set<string>();
           const deduped = merged.filter(ph => {
             const k = ph.photoId ?? ph.filename ?? '';
@@ -179,25 +192,62 @@ export default function AlbumDetailPage() {
   // Stable ref so the IntersectionObserver never captures a stale closure
   const loadMorePhotos = () => {
     if (!albumId || !hasMoreRef.current) return;
-    const nextPage = photoPageRef.current + 1;
     hasMoreRef.current = false; // prevent double-fire immediately
     setLoadingMore(true);
-    photoService.getAlbumPage(albumId, nextPage, 20)
-      .then(response => {
-        if (!response.success) return;
-        const newPhotos: Photo[] = response.data.photos || [];
+
+    const subPages = subAlbumPagesRef.current;
+    const subHasMore = subAlbumHasMoreRef.current;
+    const isAggregated = Object.keys(subPages).length > 0;
+
+    if (isAggregated) {
+      // Aggregated parent: advance each sub-album that still has more pages
+      const subIds = Object.keys(subPages).filter(id => subHasMore[id]);
+      if (subIds.length === 0) { setLoadingMore(false); return; }
+      Promise.all(
+        subIds.map(id =>
+          photoService.getAlbumPage(id, subPages[id] + 1, 20).catch(() => null)
+        )
+      ).then(results => {
+        const newPhotos: Photo[] = [];
+        let anyMore = false;
+        subIds.forEach((id, i) => {
+          const p = results[i];
+          subAlbumPagesRef.current[id] = subPages[id] + 1;
+          if (!p) { subAlbumHasMoreRef.current[id] = false; return; }
+          newPhotos.push(...(p.data.photos ?? []));
+          subAlbumHasMoreRef.current[id] = p.data.hasMore ?? false;
+          if (p.data.hasMore) anyMore = true;
+        });
+        // Also check remaining sub-albums still have more
+        const stillAny = anyMore || Object.values(subAlbumHasMoreRef.current).some(Boolean);
         setAlbumPhotos(prev => {
           const seen = new Set(prev.map(p => p.photoId));
           return [...prev, ...newPhotos.filter(p => !seen.has(p.photoId))];
         });
-        const more = response.data.hasMore ?? false;
-        hasMoreRef.current = more;
-        setHasMorePhotos(more);
-        photoPageRef.current = nextPage;
-        setPhotoPage(nextPage);
-      })
-      .catch(err => console.error('Error loading more photos:', err))
-      .finally(() => setLoadingMore(false));
+        hasMoreRef.current = stillAny;
+        setHasMorePhotos(stillAny);
+      }).catch(err => console.error('Error loading more photos:', err))
+        .finally(() => setLoadingMore(false));
+    } else {
+      // Direct album pagination
+      const nextPage = photoPageRef.current + 1;
+      photoService.getAlbumPage(albumId, nextPage, 20)
+        .then(response => {
+          if (!response.success) return;
+          const newPhotos: Photo[] = response.data.photos || [];
+          setAlbumPhotos(prev => {
+            const seen = new Set(prev.map(p => p.photoId));
+            return [...prev, ...newPhotos.filter(p => !seen.has(p.photoId))];
+          });
+          const more = response.data.hasMore ?? false;
+          hasMoreRef.current = more;
+          setHasMorePhotos(more);
+          photoPageRef.current = nextPage;
+          setPhotoPage(nextPage);
+        })
+        .catch(err => console.error('Error loading more photos:', err))
+        .finally(() => setLoadingMore(false));
+    }
   };
   loadMoreRef.current = loadMorePhotos;
 
@@ -285,14 +335,19 @@ export default function AlbumDetailPage() {
 
   const openSection = async (sub: SubAlbumMeta) => {
     if (expandedSection?.sub.albumId === sub.albumId) {
-      setExpandedSection(null); // collapse if already open
+      setExpandedSection(null);
       return;
     }
     try {
       setSectionLoading(true);
-      const response = await photoService.getAlbum(sub.albumId);
+      const response = await photoService.getAlbumPage(sub.albumId, 1, 20);
       if (response.success) {
-        setExpandedSection({ sub, photos: response.data.photos ?? [] });
+        setExpandedSection({
+          sub,
+          photos: response.data.photos ?? [],
+          page: 1,
+          hasMore: response.data.hasMore ?? false,
+        });
       }
     } catch (e) {
       console.error('Error loading section photos:', e);
@@ -300,6 +355,42 @@ export default function AlbumDetailPage() {
       setSectionLoading(false);
     }
   };
+
+  const loadMoreSectionPhotos = () => {
+    if (!expandedSection || !expandedSection.hasMore || sectionLoadingMore) return;
+    const { sub, page } = expandedSection;
+    setSectionLoadingMore(true);
+    photoService.getAlbumPage(sub.albumId, page + 1, 20)
+      .then(response => {
+        if (!response.success) return;
+        const newPhotos: Photo[] = response.data.photos ?? [];
+        setExpandedSection(prev => {
+          if (!prev) return prev;
+          const seen = new Set(prev.photos.map(p => p.photoId));
+          return {
+            ...prev,
+            photos: [...prev.photos, ...newPhotos.filter(p => !seen.has(p.photoId))],
+            page: page + 1,
+            hasMore: response.data.hasMore ?? false,
+          };
+        });
+      })
+      .catch(err => console.error('Error loading more section photos:', err))
+      .finally(() => setSectionLoadingMore(false));
+  };
+  sectionLoadMoreRef.current = loadMoreSectionPhotos;
+
+  // Section IntersectionObserver — re-attach when section changes
+  useEffect(() => {
+    const sentinel = sectionSentinelRef.current;
+    if (!sentinel) return;
+    const observer = new IntersectionObserver(
+      (entries) => { if (entries[0].isIntersecting) sectionLoadMoreRef.current(); },
+      { rootMargin: '400px' }
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [expandedSection?.sub.albumId]);
 
   const saveSections = async () => {
     if (!albumId) return;
@@ -717,29 +808,41 @@ export default function AlbumDetailPage() {
                                   <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-cyan-500"></div>
                                 </div>
                               ) : expandedSection.photos.length > 0 ? (
-                                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
-                                  {expandedSection.photos.map((photo, idx) => (
-                                    <div key={photo.photoId || idx} className="group relative cursor-pointer" onClick={() => handleOpenPhoto(photo)}>
-                                      <div className="aspect-square bg-gray-100 rounded-lg overflow-hidden">
-                                        {(photo.thumbnailUrl || photo.downloadUrl) && photo.mimeType?.startsWith('image/') ? (
-                                          <img src={photo.thumbnailUrl ?? photo.downloadUrl} alt={photo.originalName} loading="lazy" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
-                                        ) : photo.downloadUrl && photo.mimeType?.startsWith('video/') ? (
-                                          <div className="w-full h-full bg-gray-900 relative flex items-center justify-center">
-                                            <video src={photo.downloadUrl} className="w-full h-full object-cover" muted preload="metadata" />
-                                            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                                              <div className="bg-black/50 rounded-full p-2"><svg className="h-5 w-5 text-white" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></div>
+                                <>
+                                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+                                    {expandedSection.photos.map((photo, idx) => (
+                                      <div key={photo.photoId || idx} className="group relative cursor-pointer" onClick={() => handleOpenPhoto(photo)}>
+                                        <div className="aspect-square bg-gray-100 rounded-lg overflow-hidden">
+                                          {(photo.thumbnailUrl || photo.downloadUrl) && photo.mimeType?.startsWith('image/') ? (
+                                            <img src={photo.thumbnailUrl ?? photo.downloadUrl} alt={photo.originalName} loading="lazy" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+                                          ) : photo.downloadUrl && photo.mimeType?.startsWith('video/') ? (
+                                            <div className="w-full h-full bg-gray-900 relative flex items-center justify-center">
+                                              <video src={photo.downloadUrl} className="w-full h-full object-cover" muted preload="metadata" />
+                                              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                                                <div className="bg-black/50 rounded-full p-2"><svg className="h-5 w-5 text-white" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></div>
+                                              </div>
                                             </div>
-                                          </div>
-                                        ) : (
-                                          <div className="w-full h-full bg-gray-200 flex items-center justify-center"><ImageIcon className="h-6 w-6 text-gray-400" /></div>
-                                        )}
+                                          ) : (
+                                            <div className="w-full h-full bg-gray-200 flex items-center justify-center"><ImageIcon className="h-6 w-6 text-gray-400" /></div>
+                                          )}
+                                        </div>
+                                        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 to-transparent p-2 opacity-0 group-hover:opacity-100 transition-opacity rounded-b-lg">
+                                          <p className="text-xs text-white truncate">{photo.originalName}</p>
+                                        </div>
                                       </div>
-                                      <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 to-transparent p-2 opacity-0 group-hover:opacity-100 transition-opacity rounded-b-lg">
-                                        <p className="text-xs text-white truncate">{photo.originalName}</p>
-                                      </div>
+                                    ))}
+                                  </div>
+                                  {/* Section scroll sentinel */}
+                                  <div ref={sectionSentinelRef} className="h-4" />
+                                  {sectionLoadingMore && (
+                                    <div className="flex justify-center py-3">
+                                      <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-cyan-500" />
                                     </div>
-                                  ))}
-                                </div>
+                                  )}
+                                  {!expandedSection.hasMore && (
+                                    <p className="text-center text-xs text-gray-400 py-2">All {expandedSection.photos.length} photos loaded</p>
+                                  )}
+                                </>
                               ) : (
                                 <p className="text-center text-sm text-gray-400 py-6">No photos in this section.</p>
                               )}

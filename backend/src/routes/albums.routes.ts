@@ -194,7 +194,16 @@ router.get('/:id/people', async (req: Request, res: Response) => {
     const album = await db.getAlbumById(req.params.id, req.user!.id);
     if (!album) return res.status(404).json({ success: false, error: 'Album not found or access denied' });
 
-    const groups = await db.getPeopleInPhotoSet(album.photoIds, album.userId);
+    // If parent album has no direct photos, aggregate photoIds from all sub-albums
+    let photoIds = album.photoIds;
+    if (photoIds.length === 0 && (album.subAlbumIds ?? []).length > 0) {
+      const subAlbums = await Promise.all(
+        (album.subAlbumIds ?? []).map(id => db.getAlbumById(id, req.user!.id))
+      );
+      photoIds = subAlbums.flatMap(s => s?.photoIds ?? []);
+    }
+
+    const groups = await db.getPeopleInPhotoSet(photoIds, album.userId);
 
     // Generate cover URLs for each person
     const groupsWithUrls = await Promise.all(groups.map(async g => {
