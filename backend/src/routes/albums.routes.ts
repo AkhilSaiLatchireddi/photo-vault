@@ -188,33 +188,36 @@ router.put('/:id/sub-albums', async (req: Request, res: Response) => {
   }
 });
 
-// GET /api/albums/:id/people — people grouped view for an album
+// GET /api/albums/:id/people — people for an album, sorted by photoCount desc
+// Uses person table directly (fast) instead of scanning 8k+ face records.
 router.get('/:id/people', async (req: Request, res: Response) => {
   try {
     const album = await db.getAlbumById(req.params.id, req.user!.id);
     if (!album) return res.status(404).json({ success: false, error: 'Album not found or access denied' });
 
-    // If parent album has no direct photos, aggregate photoIds from all sub-albums
-    let photoIds = album.photoIds;
-    if (photoIds.length === 0 && (album.subAlbumIds ?? []).length > 0) {
-      const subAlbums = await Promise.all(
-        (album.subAlbumIds ?? []).map(id => db.getAlbumById(id, req.user!.id))
-      );
-      photoIds = subAlbums.flatMap(s => s?.photoIds ?? []);
-    }
+    const people = await db.getPeopleByUserId(album.userId);
+    people.sort((a, b) => (b.photoCount ?? 0) - (a.photoCount ?? 0));
 
-    const groups = await db.getPeopleInPhotoSet(photoIds, album.userId);
+    const PAGE_SIZE = parseInt(req.query.limit as string) || 30;
+    const page = parseInt(req.query.page as string) || 1;
+    const start = (page - 1) * PAGE_SIZE;
+    const pageItems = people.slice(start, start + PAGE_SIZE);
 
-    // Generate cover URLs for each person
-    const groupsWithUrls = await Promise.all(groups.map(async g => {
+    const groupsWithUrls = await Promise.all(pageItems.map(async person => {
       let coverUrl: string | null = null;
-      if (g.person.coverFaceS3Key) {
-        try { coverUrl = (await s3Service.getObjectUrl(g.person.coverFaceS3Key, 7200)).url; } catch { /* ignore */ }
+      if (person.coverFaceS3Key) {
+        try { coverUrl = (await s3Service.getObjectUrl(person.coverFaceS3Key, 7200)).url; } catch { /* ignore */ }
       }
-      return { person: { ...g.person, coverUrl }, photoIds: g.photoIds };
+      return { person: { ...person, coverUrl }, photoIds: [] as string[] };
     }));
 
-    res.json({ success: true, data: groupsWithUrls });
+    res.json({
+      success: true,
+      data: groupsWithUrls,
+      totalCount: people.length,
+      page,
+      hasMore: start + PAGE_SIZE < people.length,
+    });
   } catch (error) {
     console.error('Error fetching album people:', error);
     res.status(500).json({ success: false, error: 'Failed to fetch album people' });

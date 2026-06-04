@@ -529,10 +529,20 @@ class PhotoService {
     return response.json();
   }
 
-  async getPublicAlbumPeople(publicToken: string) {
-    const response = await fetch(`${this.apiBaseUrl}/api/public/albums/${publicToken}/people`, {
-      headers: { 'Content-Type': 'application/json' },
-    });
+  async getPublicAlbumPeople(publicToken: string, page = 1, limit = 30) {
+    const response = await fetch(
+      `${this.apiBaseUrl}/api/public/albums/${publicToken}/people?page=${page}&limit=${limit}`,
+      { headers: { 'Content-Type': 'application/json' } }
+    );
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return response.json();
+  }
+
+  async getPublicPersonPhotos(publicToken: string, personId: string, page = 1, limit = 20) {
+    const response = await fetch(
+      `${this.apiBaseUrl}/api/public/albums/${publicToken}/people/${personId}/photos?page=${page}&limit=${limit}`,
+      { headers: { 'Content-Type': 'application/json' } }
+    );
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     return response.json();
   }

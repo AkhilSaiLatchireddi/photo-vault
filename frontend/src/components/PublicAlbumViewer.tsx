@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, type RefObject } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Camera, Image as ImageIcon, AlertCircle, ExternalLink, ArrowLeft, Heart, Users, LayoutGrid, ChevronLeft } from 'lucide-react';
 import { photoService } from '../services/photoService';
@@ -57,7 +57,7 @@ function getGradient(name: string): string {
 }
 
 type ViewMode = 'photos' | 'people';
-type PersonGroup = { person: { personId: string; name: string; coverUrl?: string }; photoIds: string[] };
+type PersonGroup = { person: { personId: string; name: string; coverUrl?: string; photoCount?: number }; photoIds: string[] };
 
 export default function PublicAlbumViewer() {
   const { token } = useParams<{ token: string }>();
@@ -67,9 +67,8 @@ export default function PublicAlbumViewer() {
   const [error, setError] = useState<string | null>(null);
   const [selectedPhoto, setSelectedPhoto] = useState<PublicPhoto | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>('photos');
-  const [peopleGroups, setPeopleGroups] = useState<PersonGroup[]>([]);
-  const [peopleLoading, setPeopleLoading] = useState(false);
-  const [selectedPerson, setSelectedPerson] = useState<PersonGroup | null>(null);
+
+  // Photos pagination
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(false);
   const pageRef = useRef(1);
@@ -77,19 +76,41 @@ export default function PublicAlbumViewer() {
   const tokenRef = useRef<string | undefined>(undefined);
   const sentinelRef = useRef<HTMLDivElement>(null);
 
+  // People pagination
+  const [peopleGroups, setPeopleGroups] = useState<PersonGroup[]>([]);
+  const [peopleLoading, setPeopleLoading] = useState(false);
+  const [peopleLoadingMore, setPeopleLoadingMore] = useState(false);
+  const [peopleTotalCount, setPeopleTotalCount] = useState(0);
+  const [peopleHasMore, setPeopleHasMore] = useState(false);
+  const peoplePageRef = useRef(1);
+  const peopleHasMoreRef = useRef(false);
+  const peopleSentinelRef = useRef<HTMLDivElement>(null);
+
+  // Selected person + their paginated photos
+  const [selectedPerson, setSelectedPerson] = useState<PersonGroup | null>(null);
+  const [personPhotos, setPersonPhotos] = useState<PublicPhoto[]>([]);
+  const [personPhotosLoading, setPersonPhotosLoading] = useState(false);
+  const [personPhotosLoadingMore, setPersonPhotosLoadingMore] = useState(false);
+  const [personPhotosHasMore, setPersonPhotosHasMore] = useState(false);
+  const [personPhotoTotal, setPersonPhotoTotal] = useState(0);
+  const personPhotosPageRef = useRef(1);
+  const personPhotosHasMoreRef = useRef(false);
+  const personPhotosSentinelRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
     if (token) { tokenRef.current = token; fetchPublicAlbum(token); }
   }, [token]);
 
-  // IntersectionObserver for public album infinite scroll
+  // Photos IntersectionObserver
   useEffect(() => {
+    if (loading) return;
     const sentinel = sentinelRef.current;
     if (!sentinel) return;
     const observer = new IntersectionObserver(
       (entries) => {
         if (entries[0].isIntersecting && hasMoreRef.current && tokenRef.current) {
           const nextPage = pageRef.current + 1;
-          hasMoreRef.current = false; // prevent double-fire
+          hasMoreRef.current = false;
           setLoadingMore(true);
           photoService.getPublicAlbumPage(tokenRef.current, nextPage, 20)
             .then(r => {
@@ -109,13 +130,70 @@ export default function PublicAlbumViewer() {
     );
     observer.observe(sentinel);
     return () => observer.disconnect();
-  }, []);
+  }, [loading]);
+
+  // People IntersectionObserver
+  useEffect(() => {
+    if (peopleLoading || viewMode !== 'people') return;
+    const sentinel = peopleSentinelRef.current;
+    if (!sentinel) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && peopleHasMoreRef.current && token) {
+          peopleHasMoreRef.current = false;
+          setPeopleLoadingMore(true);
+          photoService.getPublicAlbumPeople(token, peoplePageRef.current + 1, 30)
+            .then(r => {
+              if (r.success) {
+                setPeopleGroups(prev => [...prev, ...r.data]);
+                peopleHasMoreRef.current = r.hasMore ?? false;
+                setPeopleHasMore(r.hasMore ?? false);
+                peoplePageRef.current += 1;
+              }
+            })
+            .catch(() => {})
+            .finally(() => setPeopleLoadingMore(false));
+        }
+      },
+      { rootMargin: '400px' }
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [peopleLoading, viewMode, token]);
+
+  // Person photos IntersectionObserver
+  useEffect(() => {
+    if (personPhotosLoading || !selectedPerson) return;
+    const sentinel = personPhotosSentinelRef.current;
+    if (!sentinel) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && personPhotosHasMoreRef.current && token) {
+          personPhotosHasMoreRef.current = false;
+          setPersonPhotosLoadingMore(true);
+          photoService.getPublicPersonPhotos(token, selectedPerson.person.personId, personPhotosPageRef.current + 1, 20)
+            .then(r => {
+              if (r.success) {
+                setPersonPhotos(prev => [...prev, ...(r.data.photos ?? [])]);
+                personPhotosHasMoreRef.current = r.data.hasMore ?? false;
+                setPersonPhotosHasMore(r.data.hasMore ?? false);
+                personPhotosPageRef.current += 1;
+              }
+            })
+            .catch(() => {})
+            .finally(() => setPersonPhotosLoadingMore(false));
+        }
+      },
+      { rootMargin: '400px' }
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [personPhotosLoading, selectedPerson, token]);
 
   const fetchPublicAlbum = async (publicToken: string) => {
     try {
       setLoading(true);
       setError(null);
-      // First page only — fast load
       const response = await photoService.getPublicAlbumPage(publicToken, 1, 20);
       if (response.success) {
         setAlbum(response.data);
@@ -141,8 +219,14 @@ export default function PublicAlbumViewer() {
     if (peopleGroups.length > 0) return;
     try {
       setPeopleLoading(true);
-      const response = await photoService.getPublicAlbumPeople(publicToken);
-      if (response.success) setPeopleGroups(response.data);
+      const response = await photoService.getPublicAlbumPeople(publicToken, 1, 30);
+      if (response.success) {
+        setPeopleGroups(response.data);
+        setPeopleTotalCount(response.totalCount ?? response.data.length);
+        setPeopleHasMore(response.hasMore ?? false);
+        peopleHasMoreRef.current = response.hasMore ?? false;
+        peoplePageRef.current = 1;
+      }
     } catch (err) {
       console.error('Error fetching album people:', err);
     } finally {
@@ -150,14 +234,35 @@ export default function PublicAlbumViewer() {
     }
   };
 
+  const selectPerson = async (group: PersonGroup) => {
+    if (!token) return;
+    setSelectedPerson(group);
+    setPersonPhotos([]);
+    setPersonPhotosHasMore(false);
+    personPhotosPageRef.current = 1;
+    try {
+      setPersonPhotosLoading(true);
+      const r = await photoService.getPublicPersonPhotos(token, group.person.personId, 1, 20);
+      if (r.success) {
+        setPersonPhotos(r.data.photos ?? []);
+        setPersonPhotoTotal(r.data.totalCount ?? 0);
+        setPersonPhotosHasMore(r.data.hasMore ?? false);
+        personPhotosHasMoreRef.current = r.data.hasMore ?? false;
+        personPhotosPageRef.current = 1;
+      }
+    } catch { /* ignore */ } finally {
+      setPersonPhotosLoading(false);
+    }
+  };
+
   const handleViewMode = (mode: ViewMode) => {
     setViewMode(mode);
     setSelectedPerson(null);
+    setPersonPhotos([]);
     if (mode === 'people' && token) fetchPeople(token);
   };
 
   const openChildAlbum = (child: ChildAlbum) => {
-    // Navigate within the SPA to the child album token
     navigate(`/album/public/${child.token}`);
   };
 
@@ -263,54 +368,24 @@ export default function PublicAlbumViewer() {
           {/* People tab */}
           {activeMasterTab === 'people' && (
             <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-              {peopleLoading ? (
-                <div className="flex items-center justify-center py-16">
-                  <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-pink-500"></div>
-                </div>
-              ) : selectedPerson ? (
-                <div>
-                  <button onClick={() => setSelectedPerson(null)} className="flex items-center gap-2 text-sm text-gray-500 hover:text-pink-600 mb-5 transition-colors">
-                    <ChevronLeft className="h-4 w-4" />Back to People
-                  </button>
-                  <div className="flex items-center gap-3 mb-5">
-                    {selectedPerson.person.coverUrl ? (
-                      <img src={selectedPerson.person.coverUrl} alt={selectedPerson.person.name} className="w-12 h-12 rounded-full object-cover ring-2 ring-pink-400" />
-                    ) : (
-                      <div className="w-12 h-12 rounded-full bg-gradient-to-br from-pink-400 to-rose-500 flex items-center justify-center text-white font-bold text-lg">
-                        {selectedPerson.person.name.charAt(0).toUpperCase()}
-                      </div>
-                    )}
-                    <div>
-                      <p className="font-bold text-gray-900">{selectedPerson.person.name}</p>
-                      <p className="text-sm text-gray-500">{selectedPerson.photoIds.length} photos</p>
-                    </div>
-                  </div>
-                  <PhotoGrid photos={album.photos.filter(p => selectedPerson.photoIds.includes(p.photoId))} onSelect={setSelectedPhoto} />
-                </div>
-              ) : peopleGroups.length > 0 ? (
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-5">
-                  {peopleGroups.map(group => (
-                    <button key={group.person.personId} onClick={() => setSelectedPerson(group)} className="group flex flex-col items-center gap-2 p-3 rounded-2xl hover:bg-pink-50 transition-all hover:shadow-md">
-                      <div className="relative">
-                        {group.person.coverUrl ? (
-                          <img src={group.person.coverUrl} alt={group.person.name} className="w-20 h-20 rounded-full object-cover ring-4 ring-white group-hover:ring-pink-300 shadow-md transition-all" />
-                        ) : (
-                          <div className="w-20 h-20 rounded-full bg-gradient-to-br from-pink-400 to-rose-500 flex items-center justify-center text-white font-bold text-2xl ring-4 ring-white shadow-md">
-                            {group.person.name.charAt(0).toUpperCase()}
-                          </div>
-                        )}
-                        <span className="absolute -bottom-1 -right-1 bg-pink-500 text-white text-xs font-bold rounded-full w-6 h-6 flex items-center justify-center shadow">{group.photoIds.length}</span>
-                      </div>
-                      <p className="text-sm font-semibold text-gray-800 group-hover:text-pink-700 text-center">{group.person.name}</p>
-                    </button>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-center py-16">
-                  <Users className="h-12 w-12 text-gray-300 mx-auto mb-3" />
-                  <h3 className="text-lg font-semibold text-gray-700">No people tagged yet</h3>
-                </div>
-              )}
+              <PeoplePanel
+                peopleGroups={peopleGroups}
+                peopleLoading={peopleLoading}
+                peopleLoadingMore={peopleLoadingMore}
+                peopleTotalCount={peopleTotalCount}
+                peopleHasMore={peopleHasMore}
+                peopleSentinelRef={peopleSentinelRef}
+                selectedPerson={selectedPerson}
+                personPhotos={personPhotos}
+                personPhotosLoading={personPhotosLoading}
+                personPhotosLoadingMore={personPhotosLoadingMore}
+                personPhotosHasMore={personPhotosHasMore}
+                personPhotoTotal={personPhotoTotal}
+                personPhotosSentinelRef={personPhotosSentinelRef}
+                onSelectPerson={selectPerson}
+                onBack={() => { setSelectedPerson(null); setPersonPhotos([]); }}
+                onSelectPhoto={setSelectedPhoto}
+              />
             </div>
           )}
 
@@ -393,66 +468,24 @@ export default function PublicAlbumViewer() {
 
           {/* People view */}
           {viewMode === 'people' && (
-            peopleLoading ? (
-              <div className="flex items-center justify-center py-16">
-                <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-pink-500"></div>
-              </div>
-            ) : selectedPerson ? (
-              <div>
-                <button onClick={() => setSelectedPerson(null)} className="flex items-center gap-2 text-sm text-gray-500 hover:text-pink-600 mb-5 transition-colors">
-                  <ChevronLeft className="h-4 w-4" />Back to People
-                </button>
-                <div className="flex items-center gap-3 mb-5">
-                  {selectedPerson.person.coverUrl ? (
-                    <img src={selectedPerson.person.coverUrl} alt={selectedPerson.person.name} className="w-12 h-12 rounded-full object-cover ring-2 ring-pink-400" />
-                  ) : (
-                    <div className="w-12 h-12 rounded-full bg-gradient-to-br from-pink-400 to-rose-500 flex items-center justify-center text-white font-bold text-lg">
-                      {selectedPerson.person.name.charAt(0).toUpperCase()}
-                    </div>
-                  )}
-                  <div>
-                    <p className="font-bold text-gray-900">{selectedPerson.person.name}</p>
-                    <p className="text-sm text-gray-500">{selectedPerson.photoIds.length} photos in this album</p>
-                  </div>
-                </div>
-                <PhotoGrid
-                  photos={album.photos.filter(p => selectedPerson.photoIds.includes(p.photoId))}
-                  onSelect={setSelectedPhoto}
-                />
-              </div>
-            ) : peopleGroups.length > 0 ? (
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-5">
-                {peopleGroups.map(group => (
-                  <button
-                    key={group.person.personId}
-                    onClick={() => setSelectedPerson(group)}
-                    className="group flex flex-col items-center gap-2 p-3 rounded-2xl hover:bg-pink-50 transition-all hover:shadow-md"
-                  >
-                    <div className="relative">
-                      {group.person.coverUrl ? (
-                        <img src={group.person.coverUrl} alt={group.person.name} className="w-20 h-20 rounded-full object-cover ring-4 ring-white group-hover:ring-pink-300 shadow-md transition-all" />
-                      ) : (
-                        <div className="w-20 h-20 rounded-full bg-gradient-to-br from-pink-400 to-rose-500 flex items-center justify-center text-white font-bold text-2xl ring-4 ring-white shadow-md">
-                          {group.person.name.charAt(0).toUpperCase()}
-                        </div>
-                      )}
-                      <span className="absolute -bottom-1 -right-1 bg-pink-500 text-white text-xs font-bold rounded-full w-6 h-6 flex items-center justify-center shadow">
-                        {group.photoIds.length}
-                      </span>
-                    </div>
-                    <p className="text-sm font-semibold text-gray-800 group-hover:text-pink-700 text-center transition-colors leading-tight">
-                      {group.person.name}
-                    </p>
-                  </button>
-                ))}
-              </div>
-            ) : (
-              <div className="text-center py-16">
-                <Users className="h-12 w-12 text-gray-300 mx-auto mb-3" />
-                <h3 className="text-lg font-semibold text-gray-700">No people tagged yet</h3>
-                <p className="text-sm text-gray-500 mt-1">Face detection hasn't run on these photos.</p>
-              </div>
-            )
+            <PeoplePanel
+              peopleGroups={peopleGroups}
+              peopleLoading={peopleLoading}
+              peopleLoadingMore={peopleLoadingMore}
+              peopleTotalCount={peopleTotalCount}
+              peopleHasMore={peopleHasMore}
+              peopleSentinelRef={peopleSentinelRef}
+              selectedPerson={selectedPerson}
+              personPhotos={personPhotos}
+              personPhotosLoading={personPhotosLoading}
+              personPhotosLoadingMore={personPhotosLoadingMore}
+              personPhotosHasMore={personPhotosHasMore}
+              personPhotoTotal={personPhotoTotal}
+              personPhotosSentinelRef={personPhotosSentinelRef}
+              onSelectPerson={selectPerson}
+              onBack={() => { setSelectedPerson(null); setPersonPhotos([]); }}
+              onSelectPhoto={setSelectedPhoto}
+            />
           )}
         </div>
       </div>
@@ -462,6 +495,133 @@ export default function PublicAlbumViewer() {
       )}
       <Footer />
     </div>
+  );
+}
+
+// ── PeoplePanel — reused in both master and regular album views ───────────────
+
+interface PeoplePanelProps {
+  peopleGroups: PersonGroup[];
+  peopleLoading: boolean;
+  peopleLoadingMore: boolean;
+  peopleTotalCount: number;
+  peopleHasMore: boolean;
+  peopleSentinelRef: RefObject<HTMLDivElement>;
+  selectedPerson: PersonGroup | null;
+  personPhotos: PublicPhoto[];
+  personPhotosLoading: boolean;
+  personPhotosLoadingMore: boolean;
+  personPhotosHasMore: boolean;
+  personPhotoTotal: number;
+  personPhotosSentinelRef: RefObject<HTMLDivElement>;
+  onSelectPerson: (g: PersonGroup) => void;
+  onBack: () => void;
+  onSelectPhoto: (p: PublicPhoto) => void;
+}
+
+function PeoplePanel({
+  peopleGroups, peopleLoading, peopleLoadingMore, peopleTotalCount, peopleHasMore, peopleSentinelRef,
+  selectedPerson, personPhotos, personPhotosLoading, personPhotosLoadingMore, personPhotosHasMore,
+  personPhotoTotal, personPhotosSentinelRef, onSelectPerson, onBack, onSelectPhoto,
+}: PeoplePanelProps) {
+  if (peopleLoading) {
+    return (
+      <div className="flex items-center justify-center py-16">
+        <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-pink-500" />
+      </div>
+    );
+  }
+
+  if (selectedPerson) {
+    return (
+      <div>
+        <button onClick={onBack} className="flex items-center gap-2 text-sm text-gray-500 hover:text-pink-600 mb-5 transition-colors">
+          <ChevronLeft className="h-4 w-4" />Back to People
+        </button>
+        <div className="flex items-center gap-3 mb-5">
+          {selectedPerson.person.coverUrl ? (
+            <img src={selectedPerson.person.coverUrl} alt={selectedPerson.person.name} className="w-12 h-12 rounded-full object-cover ring-2 ring-pink-400" />
+          ) : (
+            <div className="w-12 h-12 rounded-full bg-gradient-to-br from-pink-400 to-rose-500 flex items-center justify-center text-white font-bold text-lg">
+              {selectedPerson.person.name.charAt(0).toUpperCase()}
+            </div>
+          )}
+          <div>
+            <p className="font-bold text-gray-900">{selectedPerson.person.name}</p>
+            <p className="text-sm text-gray-500">{personPhotoTotal} photos</p>
+          </div>
+        </div>
+        {personPhotosLoading ? (
+          <div className="flex justify-center py-12">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-pink-500" />
+          </div>
+        ) : (
+          <>
+            <PhotoGrid photos={personPhotos} onSelect={onSelectPhoto} />
+            <div ref={personPhotosSentinelRef} className="h-4" />
+            {personPhotosLoadingMore && (
+              <div className="flex justify-center py-4">
+                <div className="animate-spin rounded-full h-7 w-7 border-b-2 border-pink-500" />
+              </div>
+            )}
+            {!personPhotosHasMore && personPhotos.length > 0 && (
+              <p className="text-center text-xs text-gray-400 py-3">All {personPhotoTotal} photos loaded</p>
+            )}
+          </>
+        )}
+      </div>
+    );
+  }
+
+  if (peopleGroups.length === 0) {
+    return (
+      <div className="text-center py-16">
+        <Users className="h-12 w-12 text-gray-300 mx-auto mb-3" />
+        <h3 className="text-lg font-semibold text-gray-700">No people tagged yet</h3>
+        <p className="text-sm text-gray-500 mt-1">Face detection hasn't run on these photos.</p>
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-5">
+        {peopleGroups.map(group => (
+          <button
+            key={group.person.personId}
+            onClick={() => onSelectPerson(group)}
+            className="group flex flex-col items-center gap-2 p-3 rounded-2xl hover:bg-pink-50 transition-all hover:shadow-md"
+          >
+            <div className="relative">
+              {group.person.coverUrl ? (
+                <img src={group.person.coverUrl} alt={group.person.name} loading="lazy" className="w-20 h-20 rounded-full object-cover ring-4 ring-white group-hover:ring-pink-300 shadow-md transition-all" />
+              ) : (
+                <div className="w-20 h-20 rounded-full bg-gradient-to-br from-pink-400 to-rose-500 flex items-center justify-center text-white font-bold text-2xl ring-4 ring-white shadow-md">
+                  {group.person.name.charAt(0).toUpperCase()}
+                </div>
+              )}
+              {(group.person.photoCount ?? 0) > 0 && (
+                <span className="absolute -bottom-1 -right-1 bg-pink-500 text-white text-xs font-bold rounded-full w-6 h-6 flex items-center justify-center shadow">
+                  {group.person.photoCount}
+                </span>
+              )}
+            </div>
+            <p className="text-sm font-semibold text-gray-800 group-hover:text-pink-700 text-center transition-colors leading-tight">
+              {group.person.name}
+            </p>
+          </button>
+        ))}
+      </div>
+      <div ref={peopleSentinelRef} className="h-4 mt-4" />
+      {peopleLoadingMore && (
+        <div className="flex justify-center py-4">
+          <div className="animate-spin rounded-full h-7 w-7 border-b-2 border-pink-500" />
+        </div>
+      )}
+      {!peopleHasMore && peopleTotalCount > 0 && (
+        <p className="text-center text-xs text-gray-400 py-3">All {peopleTotalCount} people</p>
+      )}
+    </>
   );
 }
 
