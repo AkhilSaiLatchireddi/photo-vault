@@ -58,7 +58,7 @@ export default function AlbumDetailPage() {
   const [album, setAlbum] = useState<Album | null>(null);
   const [albumPhotos, setAlbumPhotos] = useState<Photo[]>([]);
   const [allPhotos, setAllPhotos] = useState<Photo[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true); // true until first fetch completes
   const [loadingMore, setLoadingMore] = useState(false);
   const [, setPhotoPage] = useState(1);
   const [totalPhotos, setTotalPhotos] = useState(0);
@@ -105,6 +105,8 @@ export default function AlbumDetailPage() {
 
   useEffect(() => {
     if (albumId) {
+      // Always bust the album cache on mount so sub-album changes are visible immediately
+      photoService.invalidateAlbumCache(albumId);
       fetchAlbum();
       fetchAllPhotos();
     }

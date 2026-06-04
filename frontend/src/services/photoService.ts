@@ -18,7 +18,7 @@ class PhotoService {
   private readonly CACHE_TTL = {
     PHOTOS: 90 * 60 * 1000,      // 90 min — matches S3 presigned URL lifetime
     ALBUMS: 90 * 60 * 1000,
-    ALBUM_DETAIL: 90 * 60 * 1000,
+    ALBUM_DETAIL: 2 * 60 * 1000, // 2 min — album membership changes often
   };
 
   // Initialize with Auth0 token getter. Pass userId so cache is scoped per user.
@@ -228,7 +228,7 @@ class PhotoService {
     
     // Invalidate albums list cache
     cacheService.invalidate(this.cacheKey('albums-list'));
-    
+
     // Return in a standardized format to match other API responses
     return {
       success: true,
