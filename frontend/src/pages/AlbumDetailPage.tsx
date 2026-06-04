@@ -11,6 +11,8 @@ import {
   ChevronLeft,
   FolderOpen,
   Settings2,
+  Pencil,
+  Check,
 } from 'lucide-react';
 import { photoService } from '../services/photoService';
 import PhotoZoomViewer from '../components/PhotoZoomViewer';
@@ -71,6 +73,11 @@ export default function AlbumDetailPage() {
   const [selectedPhoto, setSelectedPhoto] = useState<Photo | null>(null);
   const [addingPhotos, setAddingPhotos] = useState(false);
 
+  // Description inline edit
+  const [editingDescription, setEditingDescription] = useState(false);
+  const [descriptionDraft, setDescriptionDraft] = useState('');
+  const [savingDescription, setSavingDescription] = useState(false);
+
   // Sub-albums / Sections
   const [showManageSections, setShowManageSections] = useState(false);
   const [selectedSubAlbumIds, setSelectedSubAlbumIds] = useState<string[]>([]);
@@ -117,11 +124,45 @@ export default function AlbumDetailPage() {
       if (response.success) {
         const albumData = response.data;
         setAlbum(albumData);
-        setAlbumPhotos(albumData.photos || []);
-        setTotalPhotos(albumData.totalPhotos ?? albumData.photoIds?.length ?? 0);
-        const more = albumData.hasMore ?? false;
-        setHasMorePhotos(more);
-        hasMoreRef.current = more;
+
+        // If this album has no direct photos but has sub-albums, aggregate first page
+        // from all sub-albums so the Photos tab isn't empty
+        const directPhotos: Photo[] = albumData.photos || [];
+        const subAlbums: SubAlbumMeta[] = albumData.subAlbums ?? [];
+        if (directPhotos.length === 0 && subAlbums.length > 0) {
+          // No direct photos — aggregate first page from each sub-album
+          const pages = await Promise.all(
+            subAlbums.map(sub =>
+              photoService.getAlbumPage(sub.albumId, 1, 20).catch(() => null)
+            )
+          );
+          const merged: Photo[] = [];
+          let mergedTotal = 0;
+          let anyMore = false;
+          pages.forEach(p => {
+            if (!p) return;
+            merged.push(...(p.data.photos ?? []));
+            mergedTotal += p.data.totalPhotos ?? 0;
+            if (p.data.hasMore) anyMore = true;
+          });
+          const seen = new Set<string>();
+          const deduped = merged.filter(ph => {
+            const k = ph.photoId ?? ph.filename ?? '';
+            if (seen.has(k)) return false;
+            seen.add(k);
+            return true;
+          });
+          setAlbumPhotos(deduped);
+          setTotalPhotos(mergedTotal || (albumData.totalPhotos ?? 0));
+          setHasMorePhotos(anyMore);
+          hasMoreRef.current = anyMore;
+        } else {
+          setAlbumPhotos(directPhotos);
+          setTotalPhotos(albumData.totalPhotos ?? (albumData.photoIds?.length ?? 0));
+          const more = albumData.hasMore ?? false;
+          setHasMorePhotos(more);
+          hasMoreRef.current = more;
+        }
         photoPageRef.current = 1;
         setPhotoPage(1);
       } else {
@@ -171,8 +212,9 @@ export default function AlbumDetailPage() {
     }
   };
 
-  // IntersectionObserver — created once per album, calls via ref (always fresh)
+  // IntersectionObserver — re-create after album finishes loading (sentinel enters DOM)
   useEffect(() => {
+    if (loading) return; // sentinel not in DOM yet
     const sentinel = sentinelRef.current;
     if (!sentinel) return;
     const observer = new IntersectionObserver(
@@ -181,7 +223,7 @@ export default function AlbumDetailPage() {
     );
     observer.observe(sentinel);
     return () => observer.disconnect();
-  }, [albumId]); // no loadingMore dependency — stable via ref
+  }, [albumId, loading]); // re-run once loading flips to false
 
   const fetchPeople = async () => {
     if (!albumId || peopleGroups.length > 0) return; // lazy — only fetch once
@@ -423,14 +465,60 @@ export default function AlbumDetailPage() {
           </div>
         )}
         {/* Album Description */}
-        {album.description && (
-          <div className="relative mb-6">
-            <div className="absolute -inset-1 bg-gradient-to-r from-cyan-500 to-blue-500 rounded-2xl opacity-20 blur"></div>
-            <div className="relative bg-white/90 backdrop-blur-sm rounded-2xl p-6 shadow-lg border border-white/50">
-              <p className="text-gray-700">{album.description}</p>
-            </div>
+        <div className="relative mb-6">
+          <div className="absolute -inset-1 bg-gradient-to-r from-cyan-500 to-blue-500 rounded-2xl opacity-20 blur"></div>
+          <div className="relative bg-white/90 backdrop-blur-sm rounded-2xl p-4 shadow-lg border border-white/50">
+            {editingDescription ? (
+              <div className="flex gap-2 items-start">
+                <textarea
+                  autoFocus
+                  className="flex-1 text-sm text-gray-700 bg-transparent border border-cyan-300 rounded-lg p-2 resize-none outline-none focus:ring-2 focus:ring-cyan-400"
+                  rows={3}
+                  value={descriptionDraft}
+                  onChange={e => setDescriptionDraft(e.target.value)}
+                  placeholder="Add a description for this album…"
+                />
+                <div className="flex flex-col gap-1">
+                  <button
+                    disabled={savingDescription}
+                    onClick={async () => {
+                      setSavingDescription(true);
+                      try {
+                        await photoService.updateAlbum(albumId!, { description: descriptionDraft });
+                        setAlbum(prev => prev ? { ...prev, description: descriptionDraft } : prev);
+                        setEditingDescription(false);
+                      } catch { /* ignore */ } finally { setSavingDescription(false); }
+                    }}
+                    className="p-1.5 bg-cyan-500 text-white rounded-lg hover:bg-cyan-600 disabled:opacity-50"
+                    title="Save"
+                  >
+                    <Check className="h-4 w-4" />
+                  </button>
+                  <button
+                    onClick={() => setEditingDescription(false)}
+                    className="p-1.5 bg-gray-200 text-gray-600 rounded-lg hover:bg-gray-300"
+                    title="Cancel"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex items-start justify-between gap-3">
+                <p className="text-sm text-gray-700 flex-1">
+                  {album.description || <span className="text-gray-400 italic">No description — click to add one</span>}
+                </p>
+                <button
+                  onClick={() => { setDescriptionDraft(album.description ?? ''); setEditingDescription(true); }}
+                  className="flex-shrink-0 p-1.5 text-gray-400 hover:text-cyan-600 hover:bg-cyan-50 rounded-lg transition-colors"
+                  title="Edit description"
+                >
+                  <Pencil className="h-4 w-4" />
+                </button>
+              </div>
+            )}
           </div>
-        )}
+        </div>
         {/* Photos Section */}
         <div className="relative">
           <div className="absolute -top-8 -right-8 w-24 h-24 bg-gradient-to-br from-blue-400 to-indigo-500 rounded-full opacity-20 blur-2xl animate-float"></div>
