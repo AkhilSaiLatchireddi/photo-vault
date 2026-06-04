@@ -15,21 +15,6 @@ router.get('/:token', async (req: Request, res: Response) => {
     const album = await db.getAlbumByToken(token);
     if (!album) return res.status(404).json({ success: false, error: 'Album not found or expired' });
 
-    const PAGE_SIZE = parseInt(req.query.limit as string) || 20;
-    const page = parseInt(req.query.page as string) || 1;
-    const start = (page - 1) * PAGE_SIZE;
-    const pageIds = album.photoIds.slice(start, start + PAGE_SIZE);
-    const hasMore = start + PAGE_SIZE < album.photoIds.length;
-
-    const photos = await db.getPhotosByIds(pageIds);
-    const listingKeys = photos.map(p => p.thumbnailS3Key ?? p.s3Key);
-    const { urls } = await s3Service.getBatchObjectUrls(listingKeys, 7200);
-    const photosWithUrls = photos.map((p, i) => ({
-      ...p,
-      downloadUrl: p.thumbnailS3Key ? null : (urls[i]?.url ?? null),
-      thumbnailUrl: p.thumbnailS3Key ? (urls[i]?.url ?? null) : null,
-    }));
-
     const subAlbumMeta = await db.getSubAlbums(album.subAlbumIds ?? []);
     const childAlbums = subAlbumMeta
       .filter(a => a.publicToken)
@@ -40,6 +25,32 @@ router.get('/:token', async (req: Request, res: Response) => {
         publicUrl: `${process.env.FRONTEND_URL || 'https://akhilsailatchireddi.github.io/photo-vault'}/album/public/${a.publicToken}`,
       }));
 
+    // For parent albums with no direct photos, aggregate IDs from sub-albums
+    let directIds = album.photoIds;
+    let totalPhotos = directIds.length;
+    if (directIds.length === 0 && (album.subAlbumIds ?? []).length > 0) {
+      const subAlbums = await Promise.all(
+        (album.subAlbumIds ?? []).map(id => db.getAlbumById(id))
+      );
+      directIds = subAlbums.flatMap(s => s?.photoIds ?? []);
+      totalPhotos = directIds.length;
+    }
+
+    const PAGE_SIZE = parseInt(req.query.limit as string) || 20;
+    const page = parseInt(req.query.page as string) || 1;
+    const start = (page - 1) * PAGE_SIZE;
+    const pageIds = directIds.slice(start, start + PAGE_SIZE);
+    const hasMore = start + PAGE_SIZE < directIds.length;
+
+    const photos = await db.getPhotosByIds(pageIds);
+    const listingKeys = photos.map(p => p.thumbnailS3Key ?? p.s3Key);
+    const { urls } = await s3Service.getBatchObjectUrls(listingKeys, 7200);
+    const photosWithUrls = photos.map((p, i) => ({
+      ...p,
+      downloadUrl: p.thumbnailS3Key ? null : (urls[i]?.url ?? null),
+      thumbnailUrl: p.thumbnailS3Key ? (urls[i]?.url ?? null) : null,
+    }));
+
     res.json({
       success: true,
       data: {
@@ -48,10 +59,10 @@ router.get('/:token', async (req: Request, res: Response) => {
         description: album.description,
         createdAt: album.createdAt,
         photos: photosWithUrls,
-        photoCount: album.photoIds.length,
+        photoCount: totalPhotos,
         page,
         pageSize: PAGE_SIZE,
-        totalPhotos: album.photoIds.length,
+        totalPhotos,
         hasMore,
         childAlbums,
         isMasterAlbum: childAlbums.length > 0,
@@ -74,7 +85,15 @@ router.get('/:token/people', async (req: Request, res: Response) => {
     const album = await db.getAlbumByToken(token);
     if (!album) return res.status(404).json({ success: false, error: 'Album not found or expired' });
 
-    const groups = await db.getPeopleInPhotoSet(album.photoIds, album.userId);
+    let photoIds = album.photoIds;
+    if (photoIds.length === 0 && (album.subAlbumIds ?? []).length > 0) {
+      const subAlbums = await Promise.all(
+        (album.subAlbumIds ?? []).map(id => db.getAlbumById(id))
+      );
+      photoIds = subAlbums.flatMap(s => s?.photoIds ?? []);
+    }
+
+    const groups = await db.getPeopleInPhotoSet(photoIds, album.userId);
 
     const groupsWithUrls = await Promise.all(groups.map(async g => {
       let coverUrl: string | null = null;

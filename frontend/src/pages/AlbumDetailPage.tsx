@@ -528,7 +528,7 @@ export default function AlbumDetailPage() {
                 </h2>
                 <p className="text-sm text-gray-600 mt-1 flex items-center gap-2">
                   <span className="bg-gradient-to-r from-cyan-500 to-blue-500 text-white px-3 py-1 rounded-full text-xs font-medium">
-                    {albumPhotos.length} photos
+                    {totalPhotos > 0 ? totalPhotos : albumPhotos.length} photos
                   </span>
                   <span>• Created {formatDate(album.createdAt)}</span>
                 </p>
@@ -656,11 +656,12 @@ export default function AlbumDetailPage() {
             </div>
           
           <div className="p-6">
-            {/* ── Photos view ── */}
-            {viewMode === 'photos' && (
-              albumPhotos.length > 0 ? (
+            {/* ── Photos view (images only) ── */}
+            {viewMode === 'photos' && (() => {
+              const images = albumPhotos.filter(p => !p.mimeType?.startsWith('video/'));
+              return images.length > 0 ? (
                 <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-                  {albumPhotos.map((photo, index) => (
+                  {images.map((photo, index) => (
                     <div
                       key={`album-photo-${photo.photoId || photo.filename || index}`}
                       className="group relative cursor-pointer"
@@ -715,8 +716,8 @@ export default function AlbumDetailPage() {
                     <Plus className="h-5 w-5 mr-2 inline" />Add Photos
                   </button>
                 </div>
-              )
-            )}
+              );
+            })()}
 
             {/* Infinite scroll sentinel for photos tab */}
             {viewMode === 'photos' && (
