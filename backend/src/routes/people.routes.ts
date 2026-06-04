@@ -31,7 +31,18 @@ router.get('/', async (req: Request, res: Response) => {
       ...sharedPeople.map(p => ({ ...p, readOnly: true })),
     ].filter(p => { if (seen.has(p.personId)) return false; seen.add(p.personId); return true; });
 
-    const peopleWithUrls = await Promise.all(all.map(async (person) => {
+    // Sort by photoCount descending so most-photographed people appear first
+    all.sort((a, b) => (b.photoCount ?? 0) - (a.photoCount ?? 0));
+
+    // Paginate
+    const PAGE_SIZE = parseInt(req.query.limit as string) || 30;
+    const page = parseInt(req.query.page as string) || 1;
+    const start = (page - 1) * PAGE_SIZE;
+    const pageItems = all.slice(start, start + PAGE_SIZE);
+    const hasMore = start + PAGE_SIZE < all.length;
+
+    // Generate cover URLs only for this page
+    const peopleWithUrls = await Promise.all(pageItems.map(async (person) => {
       let coverUrl: string | null = null;
       if (person.coverFaceS3Key) {
         try {
@@ -42,7 +53,7 @@ router.get('/', async (req: Request, res: Response) => {
       return { ...person, coverUrl };
     }));
 
-    res.json({ success: true, data: peopleWithUrls });
+    res.json({ success: true, data: peopleWithUrls, totalCount: all.length, page, hasMore });
   } catch (error) {
     console.error('Error fetching people:', error);
     res.status(500).json({ success: false, error: 'Failed to fetch people' });
@@ -61,26 +72,34 @@ router.get('/:id/photos', async (req: Request, res: Response) => {
       return res.status(404).json({ success: false, error: 'Person not found' });
     }
 
-    const photoIds = await db.getPhotosByPersonId(req.params.id);
-    const photos = await db.getPhotosByIds(photoIds);
+    const allPhotoIds = await db.getPhotosByPersonId(req.params.id);
+    const allPhotos = await db.getPhotosByIds(allPhotoIds);
 
     let visiblePhotos;
     if (person.userId === userId) {
-      // Owner sees all their own photos for this person
-      visiblePhotos = photos.filter(p => p.userId === userId);
+      visiblePhotos = allPhotos.filter(p => p.userId === userId);
     } else {
-      // Shared user only sees photos that are in albums shared with them
       const visiblePhotoIds = await db.getPhotoIdsVisibleToSharedUser(userId);
-      visiblePhotos = photos.filter(p => visiblePhotoIds.has(p.photoId));
+      visiblePhotos = allPhotos.filter(p => visiblePhotoIds.has(p.photoId));
     }
 
-    const { urls } = await s3Service.getBatchObjectUrls(visiblePhotos.map(p => p.s3Key), 7200);
-    const photosWithUrls = visiblePhotos.map(p => ({
+    // Paginate
+    const PAGE_SIZE = parseInt(req.query.limit as string) || 20;
+    const page = parseInt(req.query.page as string) || 1;
+    const start = (page - 1) * PAGE_SIZE;
+    const pagePhotos = visiblePhotos.slice(start, start + PAGE_SIZE);
+    const hasMore = start + PAGE_SIZE < visiblePhotos.length;
+
+    // Use thumbnail key for grid — only fetch full URL when opening photo
+    const listingKeys = pagePhotos.map(p => p.thumbnailS3Key ?? p.s3Key);
+    const { urls } = await s3Service.getBatchObjectUrls(listingKeys, 7200);
+    const photosWithUrls = pagePhotos.map((p, i) => ({
       ...p,
-      downloadUrl: urls.find(u => u.key === p.s3Key)?.url ?? null,
+      thumbnailUrl: p.thumbnailS3Key ? (urls[i]?.url ?? null) : null,
+      downloadUrl: p.thumbnailS3Key ? null : (urls[i]?.url ?? null), // full URL fetched on-demand when opened
     }));
 
-    res.json({ success: true, data: { person, photos: photosWithUrls } });
+    res.json({ success: true, data: { person, photos: photosWithUrls, totalCount: visiblePhotos.length, page, hasMore } });
   } catch (error) {
     console.error('Error fetching person photos:', error);
     res.status(500).json({ success: false, error: 'Failed to fetch person photos' });

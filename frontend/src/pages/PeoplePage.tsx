@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Users, Camera, Edit2, Check, X, Trash2, Scan, Merge } from 'lucide-react';
 import Layout from '../components/layout/Layout';
@@ -20,12 +20,19 @@ export default function PeoplePage() {
   const { getAccessTokenSilently } = useAuth0();
   const [people, setPeople] = useState<Person[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const [totalCount, setTotalCount] = useState(0);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [scanning, setScanning] = useState(false);
   const [scanResult, setScanResult] = useState<string | null>(null);
-  const [mergingId, setMergingId] = useState<string | null>(null); // person being merged
+  const [mergingId, setMergingId] = useState<string | null>(null);
+  const pageRef = useRef(1);
+  const hasMoreRef = useRef(false);
+  const sentinelRef = useRef<HTMLDivElement>(null);
+  const loadMoreRef = useRef<() => void>(() => {});
 
   const getToken = async () => {
     try {
@@ -33,28 +40,55 @@ export default function PeoplePage() {
     } catch { return null; }
   };
 
-  const fetchPeople = async () => {
+  const fetchPage = async (page: number, append = false) => {
     try {
-      setLoading(true);
+      if (page === 1) setLoading(true); else setLoadingMore(true);
       const token = await getToken();
-      const res = await fetch(`${API}/api/people`, { headers: { Authorization: `Bearer ${token}` } });
+      const res = await fetch(`${API}/api/people?page=${page}&limit=30`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
       const data = await res.json();
-      if (data.success) setPeople(data.data);
-    } catch (e) {
-      setError('Failed to load people');
-    } finally {
+      if (data.success) {
+        setPeople(prev => append ? [...prev, ...data.data] : data.data);
+        setTotalCount(data.totalCount ?? data.data.length);
+        setHasMore(data.hasMore ?? false);
+        hasMoreRef.current = data.hasMore ?? false;
+        pageRef.current = page;
+      }
+    } catch { setError('Failed to load people'); }
+    finally {
       setLoading(false);
+      setLoadingMore(false);
     }
   };
 
-  useEffect(() => { fetchPeople(); }, []);
+  useEffect(() => { fetchPage(1); }, []);
+
+  const loadMore = () => {
+    if (!hasMoreRef.current || loadingMore) return;
+    hasMoreRef.current = false;
+    fetchPage(pageRef.current + 1, true);
+  };
+  loadMoreRef.current = loadMore;
+
+  // IntersectionObserver for scroll
+  useEffect(() => {
+    if (loading) return;
+    const sentinel = sentinelRef.current;
+    if (!sentinel) return;
+    const observer = new IntersectionObserver(
+      entries => { if (entries[0].isIntersecting) loadMoreRef.current(); },
+      { rootMargin: '400px' }
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [loading]);
 
   const scanAllPhotos = async () => {
     setScanning(true);
     setScanResult(null);
     try {
       const token = await getToken();
-      // Use EventBridge-backed endpoint — returns immediately, processing is async
       const res = await fetch(`${API}/api/admin/process-photos`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` },
@@ -62,14 +96,10 @@ export default function PeoplePage() {
       const data = await res.json();
       if (data.success) {
         setScanResult(data.data.message);
-        // Refresh people after a short delay to pick up fast-processing results
-        setTimeout(() => fetchPeople(), 5000);
+        setTimeout(() => fetchPage(1), 5000);
       }
-    } catch (e) {
-      setError('Processing failed');
-    } finally {
-      setScanning(false);
-    }
+    } catch { setError('Processing failed'); }
+    finally { setScanning(false); }
   };
 
   const saveName = async (personId: string) => {
@@ -98,6 +128,7 @@ export default function PeoplePage() {
         headers: { Authorization: `Bearer ${token}` },
       });
       setPeople(p => p.filter(x => x.personId !== personId));
+      setTotalCount(c => c - 1);
     } catch { setError('Failed to remove person'); }
   };
 
@@ -112,7 +143,7 @@ export default function PeoplePage() {
       const data = await res.json();
       if (data.success) {
         setMergingId(null);
-        await fetchPeople();
+        fetchPage(1);
       } else {
         setError('Failed to merge');
       }
@@ -148,7 +179,7 @@ export default function PeoplePage() {
               </button>
               <div className="flex items-center gap-2 px-4 py-2 bg-white rounded-xl shadow-sm border border-gray-100">
                 <Users className="h-5 w-5 text-purple-500" />
-                <span className="text-sm font-medium text-gray-700">{people.length} people</span>
+                <span className="text-sm font-medium text-gray-700">{totalCount} people</span>
               </div>
             </div>
           </div>
@@ -171,7 +202,7 @@ export default function PeoplePage() {
               </div>
               <h3 className="text-xl font-semibold text-gray-800 mb-2">No people found yet</h3>
               <p className="text-gray-500 mb-6 max-w-sm mx-auto">
-                Click "Process All Photos" to detect faces. New photos are processed automatically on upload. Results appear in seconds.
+                Click "Process All Photos" to detect faces. New photos are processed automatically on upload.
               </p>
               <button
                 onClick={() => navigate('/')}
@@ -181,110 +212,117 @@ export default function PeoplePage() {
               </button>
             </div>
           ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6">
-              {people.map(person => (
-                <div
-                  key={person.personId}
-                  className="group flex flex-col items-center relative"
-                >
-                  {/* Face circle */}
-                  <div
-                    className="relative w-24 h-24 rounded-full overflow-hidden cursor-pointer ring-4 ring-white shadow-lg hover:ring-purple-400 transition-all hover:scale-105"
-                    onClick={() => editingId !== person.personId && navigate(`/people/${person.personId}`)}
-                  >
-                    {person.coverUrl ? (
-                      <FaceCrop
-                        imageUrl={person.coverUrl}
-                        boundingBox={person.coverBoundingBox}
-                      />
-                    ) : (
-                      <div className="w-full h-full bg-gradient-to-br from-purple-200 to-pink-200 flex items-center justify-center">
-                        <Camera className="h-8 w-8 text-purple-400" />
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Name / edit */}
-                  <div className="mt-3 w-full text-center">
-                    {editingId === person.personId ? (
-                      <div className="flex items-center gap-1 justify-center">
-                        <input
-                          autoFocus
-                          className="w-28 text-xs text-center border border-purple-300 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-purple-400"
-                          value={editName}
-                          onChange={e => setEditName(e.target.value)}
-                          onKeyDown={e => {
-                            if (e.key === 'Enter') saveName(person.personId);
-                            if (e.key === 'Escape') setEditingId(null);
-                          }}
-                        />
-                        <button onClick={() => saveName(person.personId)} className="p-1 text-green-600 hover:text-green-800">
-                          <Check className="h-3.5 w-3.5" />
-                        </button>
-                        <button onClick={() => setEditingId(null)} className="p-1 text-gray-400 hover:text-gray-600">
-                          <X className="h-3.5 w-3.5" />
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="flex items-center justify-center gap-1">
-                        <span
-                          className="text-sm font-medium text-gray-800 truncate max-w-[90px] cursor-pointer hover:text-purple-600"
-                          onClick={() => navigate(`/people/${person.personId}`)}
-                        >
-                          {person.name}
-                        </span>
-                        <button
-                          className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 text-gray-400 hover:text-purple-600"
-                          onClick={() => { setEditingId(person.personId); setEditName(person.name); }}
-                        >
-                          <Edit2 className="h-3 w-3" />
-                        </button>
-                      </div>
-                    )}
-                    <p className="text-xs text-gray-400 mt-0.5">{person.photoCount} photo{person.photoCount !== 1 ? 's' : ''}</p>
-                  </div>
-
-                  {/* Merge / Delete — shows on hover */}
-                  <div className="mt-1 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-2">
-                    <button
-                      className="text-xs text-purple-400 hover:text-purple-700 flex items-center gap-0.5"
-                      onClick={() => setMergingId(mergingId === person.personId ? null : person.personId)}
-                      title="Merge with another person"
+            <>
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6">
+                {people.map(person => (
+                  <div key={person.personId} className="group flex flex-col items-center relative">
+                    {/* Face circle */}
+                    <div
+                      className="relative w-24 h-24 rounded-full overflow-hidden cursor-pointer ring-4 ring-white shadow-lg hover:ring-purple-400 transition-all hover:scale-105"
+                      onClick={() => editingId !== person.personId && navigate(`/people/${person.personId}`)}
                     >
-                      <Merge className="h-3 w-3" /> Merge
-                    </button>
-                    <button
-                      className="text-xs text-red-400 hover:text-red-600 flex items-center gap-0.5"
-                      onClick={() => deletePerson(person.personId, person.name)}
-                    >
-                      <Trash2 className="h-3 w-3" /> Remove
-                    </button>
-                  </div>
+                      {person.coverUrl ? (
+                        <FaceCrop imageUrl={person.coverUrl} boundingBox={person.coverBoundingBox} />
+                      ) : (
+                        <div className="w-full h-full bg-gradient-to-br from-purple-200 to-pink-200 flex items-center justify-center">
+                          <Camera className="h-8 w-8 text-purple-400" />
+                        </div>
+                      )}
+                    </div>
 
-                  {/* Merge picker */}
-                  {mergingId === person.personId && (
-                    <div className="absolute z-20 bg-white rounded-xl shadow-xl border border-gray-200 p-3 w-48 mt-1">
-                      <p className="text-xs font-semibold text-gray-600 mb-2">Merge into...</p>
-                      {people.filter(p => p.personId !== person.personId).map(other => (
-                        <button
-                          key={other.personId}
-                          className="w-full text-left text-sm px-2 py-1.5 rounded-lg hover:bg-purple-50 hover:text-purple-700 transition-colors"
-                          onClick={() => mergePeople(other.personId, person.personId)}
-                        >
-                          {other.name}
-                        </button>
-                      ))}
+                    {/* Name / edit */}
+                    <div className="mt-3 w-full text-center">
+                      {editingId === person.personId ? (
+                        <div className="flex items-center gap-1 justify-center">
+                          <input
+                            autoFocus
+                            className="w-28 text-xs text-center border border-purple-300 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-purple-400"
+                            value={editName}
+                            onChange={e => setEditName(e.target.value)}
+                            onKeyDown={e => {
+                              if (e.key === 'Enter') saveName(person.personId);
+                              if (e.key === 'Escape') setEditingId(null);
+                            }}
+                          />
+                          <button onClick={() => saveName(person.personId)} className="p-1 text-green-600 hover:text-green-800">
+                            <Check className="h-3.5 w-3.5" />
+                          </button>
+                          <button onClick={() => setEditingId(null)} className="p-1 text-gray-400 hover:text-gray-600">
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center justify-center gap-1">
+                          <span
+                            className="text-sm font-medium text-gray-800 truncate max-w-[90px] cursor-pointer hover:text-purple-600"
+                            onClick={() => navigate(`/people/${person.personId}`)}
+                          >
+                            {person.name}
+                          </span>
+                          <button
+                            className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 text-gray-400 hover:text-purple-600"
+                            onClick={() => { setEditingId(person.personId); setEditName(person.name); }}
+                          >
+                            <Edit2 className="h-3 w-3" />
+                          </button>
+                        </div>
+                      )}
+                      <p className="text-xs text-gray-400 mt-0.5">{person.photoCount} photo{person.photoCount !== 1 ? 's' : ''}</p>
+                    </div>
+
+                    {/* Merge / Delete */}
+                    <div className="mt-1 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-2">
                       <button
-                        className="mt-2 text-xs text-gray-400 hover:text-gray-600 w-full text-center"
-                        onClick={() => setMergingId(null)}
+                        className="text-xs text-purple-400 hover:text-purple-700 flex items-center gap-0.5"
+                        onClick={() => setMergingId(mergingId === person.personId ? null : person.personId)}
+                        title="Merge with another person"
                       >
-                        Cancel
+                        <Merge className="h-3 w-3" /> Merge
+                      </button>
+                      <button
+                        className="text-xs text-red-400 hover:text-red-600 flex items-center gap-0.5"
+                        onClick={() => deletePerson(person.personId, person.name)}
+                      >
+                        <Trash2 className="h-3 w-3" /> Remove
                       </button>
                     </div>
-                  )}
+
+                    {/* Merge picker */}
+                    {mergingId === person.personId && (
+                      <div className="absolute z-20 bg-white rounded-xl shadow-xl border border-gray-200 p-3 w-48 mt-1 top-full">
+                        <p className="text-xs font-semibold text-gray-600 mb-2">Merge into...</p>
+                        {people.filter(p => p.personId !== person.personId).map(other => (
+                          <button
+                            key={other.personId}
+                            className="w-full text-left text-sm px-2 py-1.5 rounded-lg hover:bg-purple-50 hover:text-purple-700 transition-colors"
+                            onClick={() => mergePeople(other.personId, person.personId)}
+                          >
+                            {other.name}
+                          </button>
+                        ))}
+                        <button
+                          className="mt-2 text-xs text-gray-400 hover:text-gray-600 w-full text-center"
+                          onClick={() => setMergingId(null)}
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              {/* Infinite scroll sentinel */}
+              <div ref={sentinelRef} className="h-4 mt-4" />
+              {loadingMore && (
+                <div className="flex justify-center py-6">
+                  <div className="animate-spin h-8 w-8 rounded-full border-4 border-purple-200 border-t-purple-600" />
                 </div>
-              ))}
-            </div>
+              )}
+              {!hasMore && people.length > 0 && (
+                <p className="text-center text-xs text-gray-400 py-4">All {totalCount} people loaded</p>
+              )}
+            </>
           )}
         </div>
       </div>
@@ -292,16 +330,14 @@ export default function PeoplePage() {
   );
 }
 
-// Crops the face from the full photo using bounding box percentages
 function FaceCrop({ imageUrl, boundingBox }: {
   imageUrl: string;
   boundingBox?: { left: number; top: number; width: number; height: number };
 }) {
   if (!boundingBox) {
-    return <img src={imageUrl} alt="face" className="w-full h-full object-cover" />;
+    return <img src={imageUrl} alt="face" className="w-full h-full object-cover" loading="lazy" />;
   }
-  // CSS trick: scale the image so the face fills the container
-  const pad = 0.3; // 30% padding around face
+  const pad = 0.3;
   const scale = 1 / (boundingBox.width + pad * 2);
   const offsetX = -(boundingBox.left - pad) * scale * 100;
   const offsetY = -(boundingBox.top - pad) * scale * 100;
@@ -310,6 +346,7 @@ function FaceCrop({ imageUrl, boundingBox }: {
     <img
       src={imageUrl}
       alt="face"
+      loading="lazy"
       style={{
         position: 'absolute',
         width: `${scale * 100}%`,
